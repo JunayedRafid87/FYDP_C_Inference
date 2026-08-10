@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C/C++ Build Artifacts
+build/
+*.o
+*.obj
+*.so
+*.dylib
+*.a
+*.exe
+
+# Large Model Binaries and Weights
+*.bin
+*.onnx
+*.pt
+*.pth
+*.engine
+
+# Calibration & Dataset Files
+cal/
+raw_images/
+*.h5
+*.tflite
+
+# Logs & Diagnostics
+*.log
+*.svg
+*.speedscope.json
+
+# Environment & IDE
+.env
+.venv/
+env/
+venv/
+.idea/
+.vscode/
+*.swp
+*.bak
