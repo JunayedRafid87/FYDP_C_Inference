@@ -31,7 +31,9 @@ To safely pilot the rover and find survivors:
 3. **You need sub-100 millisecond latency**: If video lags by even a quarter of a second (250 ms), steering the rover is like driving on black ice—you turn the joystick, nothing happens immediately, you overcorrect, and the rover crashes into a wall.
 4. **Everything must run on a small, low-power battery-operated computer on the rover**: You cannot strap a heavy 300-watt desktop computer with a gaming graphics card to a small rover.
 
-This project took an off-the-shelf single-board computer (**D-Robotics Horizon RDK X5** costing under $100), two different camera sensors, an atmospheric gas sensor, and custom artificial intelligence models (YOLO11), and engineered them across **10 iterative versions**—culminating in a rock-solid, sub-70ms production system running at **30 FPS visible video, 15 FPS thermal video, and over 133 FPS pure AI inference throughput**.
+### How the Software is Structured:
+- **The Live Deployed Rover System (Python)**: The entire live production streaming server, dual camera acquisition, hardware telemetry, gas sensing, and BPU model invocation (`hobot_dnn`) was built and verified in **Python** (`rdk_x5_stream_ground_v10.py`). This achieved **30 FPS RGB, 15 FPS Thermal, and ~65 ms glass-to-glass latency**.
+- **The Performance Acceleration Companion (C/C++)**: A companion native C module (`c_inference/`) was developed to show how offloading Python's CPU post-processing math (DFL decoding + NMS) into compiled C unlocks the BPU hardware's maximum theoretical throughput of **133.8 FPS**.
 
 ---
 
