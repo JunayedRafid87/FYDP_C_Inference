@@ -1,0 +1,3021 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// GENERATED from dc-runtime/src/*.ts — do not edit. Rebuild with `cd dc-runtime && bun run build`.
+"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // src/react.ts
+  function getReact() {
+    const R = window.React;
+    if (!R) throw new Error("dc-runtime: window.React is not available yet");
+    return R;
+  }
+  function getReactDOM() {
+    const RD = window.ReactDOM;
+    if (!RD) throw new Error("dc-runtime: window.ReactDOM is not available yet");
+    return RD;
+  }
+  var h = ((...args) => getReact().createElement(
+    ...args
+  ));
+
+  // src/parse.ts
+  function parseDcDocument(doc) {
+    const dc = doc.querySelector("x-dc");
+    if (!dc) return null;
+    const scriptEl = doc.querySelector("script[data-dc-script]");
+    const { props, preview } = parseDataProps(
+      scriptEl?.getAttribute("data-props") ?? null
+    );
+    return {
+      template: dc.innerHTML,
+      js: scriptEl ? scriptEl.textContent || "" : "",
+      props,
+      preview
+    };
+  }
+  function parseDcText(src) {
+    const openMatch = /<x-dc(?:\s[^>]*)?>/.exec(src);
+    if (!openMatch) return null;
+    const close = src.lastIndexOf("</x-dc>");
+    if (close === -1 || close < openMatch.index) return null;
+    const template = src.slice(openMatch.index + openMatch[0].length, close);
+    const doc = new DOMParser().parseFromString(src, "text/html");
+    const scriptEl = doc.querySelector("script[data-dc-script]");
+    const { props, preview } = parseDataProps(
+      scriptEl?.getAttribute("data-props") ?? null
+    );
+    return {
+      template,
+      js: scriptEl ? scriptEl.textContent || "" : "",
+      props,
+      preview
+    };
+  }
+  function parseDataProps(raw) {
+    if (!raw) return { props: null, preview: null };
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { props: null, preview: null };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { props: null, preview: null };
+    }
+    const obj = parsed;
+    const preview = obj.$preview && typeof obj.$preview === "object" ? obj.$preview : null;
+    const rest = {};
+    for (const k of Object.keys(obj)) {
+      if (k[0] !== "$") rest[k] = obj[k];
+    }
+    return { props: Object.keys(rest).length ? rest : null, preview };
+  }
+  function dcNameFromPath(pathname) {
+    let p = pathname || "";
+    try {
+      p = decodeURIComponent(p);
+    } catch {
+    }
+    const base = p.split("/").pop() || "Root";
+    return base.replace(/\.dc\.html$/, "").replace(/\.html?$/, "") || "Root";
+  }
+
+  // src/boot.ts
+  var BASE_CSS = `
+    .sc-placeholder{background:color-mix(in srgb,currentColor 8%,transparent);
+      border:1px solid color-mix(in srgb,currentColor 50%,transparent);
+      border-radius:2px;box-sizing:border-box;overflow:hidden}
+    @keyframes sc-shine{0%{background-position:100% 50%}100%{background-position:0% 50%}}
+    html.sc-dc-streaming .sc-placeholder,
+    html.sc-dc-streaming .sc-interp.sc-missing{position:relative;
+      background:color-mix(in srgb,currentColor 5%,transparent);
+      border-color:transparent}
+    html.sc-dc-streaming .sc-placeholder::before,
+    html.sc-dc-streaming .sc-interp.sc-missing::before{content:'';
+      position:absolute;inset:0;pointer-events:none;
+      background:linear-gradient(90deg,rgba(217,119,87,0) 25%,rgba(247,225,211,.95) 37%,rgba(217,119,87,0) 63%);
+      background-size:400% 100%;animation:sc-shine 1.4s ease infinite}
+    html.sc-dc-streaming .sc-placeholder:nth-child(n+9 of .sc-placeholder)::before,
+    html.sc-dc-streaming .sc-interp.sc-missing:nth-child(n+9 of .sc-interp.sc-missing)::before{animation:none;
+      background:color-mix(in srgb,currentColor 8%,transparent)}
+    .sc-placeholder-error{padding:4px 8px;font:11px/1.4 ui-monospace,monospace;
+      color:color-mix(in srgb,currentColor 70%,transparent);word-break:break-word}
+    .sc-interp.sc-missing{display:inline-block;width:2em;height:1em;overflow:hidden;
+      vertical-align:text-bottom;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.5);
+      border-radius:2px;box-sizing:border-box;color:transparent;
+      user-select:none}
+    .sc-interp.sc-unresolved{font-family:ui-monospace,monospace;font-size:.85em;
+      color:color-mix(in srgb,currentColor 50%,transparent);
+      background:color-mix(in srgb,currentColor 10%,transparent);border-radius:3px;
+      padding:0 3px}
+    .sc-host.sc-has-error{position:relative}
+    .sc-logic-error{position:absolute;top:8px;left:8px;z-index:2147483647;max-width:60ch;
+      padding:6px 10px;background:#b00020;color:#fff;font:12px/1.4 ui-monospace,monospace;
+      border-radius:4px;white-space:pre-wrap;pointer-events:none}
+    /* Mirrors PRINT_BASELINE_CSS in apps/web deck-stage-export.ts \u2014 keep both
+       in sync until dc-runtime regains a build step. */
+    @media print {
+      @page { margin: 0.5cm; }
+      figure, table { break-inside: avoid; }
+      #dc-root, #dc-root > .sc-host { height: auto; }
+      *, *::before, *::after {
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+        backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        animation-delay: -99s !important; animation-duration: .001s !important;
+        animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+        animation-play-state: running !important; transition-duration: 0s !important;
+      }
+    }
+  `;
+  var FULL_PAGE_CSS = "html,body{height:100%;margin:0}#dc-root,#dc-root>.sc-host{height:100%}";
+  function rootNameForDocument(doc, loc) {
+    let bootPath = loc.pathname || "";
+    if (!/\.dc\.html?$/i.test(safeDecode(bootPath))) {
+      try {
+        bootPath = new URL(doc.baseURI || "/").pathname;
+      } catch {
+      }
+    }
+    return dcNameFromPath(bootPath);
+  }
+  function safeDecode(s) {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  }
+  function boot(runtime, doc = document) {
+    const parsed = parseDcDocument(doc);
+    if (!parsed) return null;
+    const React = getReact();
+    const rootName = rootNameForDocument(doc, location);
+    runtime.markFetched(rootName);
+    runtime.setRootName(rootName);
+    runtime.adoptParsed(rootName, parsed);
+    if (!window.__resources) {
+      fetch(location.href).then((res) => res.ok ? res.text() : "").then((t) => {
+        const raw = t ? parseDcText(t) : null;
+        if (raw?.template) runtime.updateHtml(rootName, raw.template);
+      }).catch(() => {
+      });
+    }
+    const dc = doc.querySelector("x-dc");
+    const hostEl = doc.createElement("div");
+    hostEl.id = "dc-root";
+    dc.replaceWith(hostEl);
+    if (!parsed.preview) {
+      const s = doc.createElement("style");
+      s.textContent = FULL_PAGE_CSS;
+      doc.head.appendChild(s);
+    }
+    const Root = runtime.getDC(rootName);
+    const entry = runtime.registry.get(rootName);
+    function StandaloneRoot() {
+      const [, setTick] = React.useState(0);
+      React.useEffect(() => {
+        const sub = () => setTick((n) => n + 1);
+        entry.subs.add(sub);
+        return () => {
+          entry.subs.delete(sub);
+        };
+      }, []);
+      const defaults = React.useMemo(() => {
+        const d = {};
+        for (const k in entry.propsMeta || {}) {
+          const v = entry.propsMeta?.[k]?.default;
+          if (v !== void 0) d[k] = v;
+        }
+        return d;
+      }, [entry.propsMeta]);
+      return h(Root, { ...defaults, ...entry.propOverrides || {} });
+    }
+    const ReactDOM = getReactDOM();
+    if (ReactDOM.createRoot)
+      ReactDOM.createRoot(hostEl).render(h(StandaloneRoot));
+    else ReactDOM.render(h(StandaloneRoot), hostEl);
+    return rootName;
+  }
+
+  // src/expr.ts
+  var IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/;
+  var NUMBER_RE = /^-?\d+(\.\d+)?$/;
+  function resolve(vals, src) {
+    const expr = String(src).trim();
+    if (!expr) return void 0;
+    if (expr[0] === "(" && expr[expr.length - 1] === ")" && parensWrapWhole(expr)) {
+      return resolve(vals, expr.slice(1, -1));
+    }
+    const eq = findTopLevelEquality(expr);
+    if (eq) {
+      const lv = resolve(vals, expr.slice(0, eq.index));
+      const rv = resolve(vals, expr.slice(eq.index + eq.op.length));
+      switch (eq.op) {
+        case "===":
+          return lv === rv;
+        case "!==":
+          return lv !== rv;
+        case "==":
+          return lv == rv;
+        default:
+          return lv != rv;
+      }
+    }
+    if (expr[0] === "!") return !resolve(vals, expr.slice(1));
+    if (expr === "true") return true;
+    if (expr === "false") return false;
+    if (expr === "null") return null;
+    if (expr === "undefined") return void 0;
+    if (NUMBER_RE.test(expr)) return Number(expr);
+    if (expr.length >= 2 && (expr[0] === '"' || expr[0] === "'") && expr[expr.length - 1] === expr[0]) {
+      return expr.slice(1, -1);
+    }
+    return resolvePath(vals, expr);
+  }
+  function parensWrapWhole(expr) {
+    let depth = 0;
+    for (let i = 0; i < expr.length - 1; i++) {
+      if (expr[i] === "(") depth++;
+      else if (expr[i] === ")") {
+        depth--;
+        if (depth === 0) return false;
+      }
+    }
+    return true;
+  }
+  function findTopLevelEquality(expr) {
+    let depth = 0;
+    for (let i = 0; i < expr.length; i++) {
+      const c = expr[i];
+      if (c === "[" || c === "(") depth++;
+      else if (c === "]" || c === ")") depth--;
+      else if (depth === 0 && (c === "=" || c === "!") && expr[i + 1] === "=") {
+        if (i > 0 && (expr[i - 1] === "=" || expr[i - 1] === "!")) continue;
+        if (!expr.slice(0, i).trim()) continue;
+        const op = expr[i + 2] === "=" ? c + "==" : c + "=";
+        return { index: i, op };
+      }
+    }
+    return null;
+  }
+  function resolvePath(vals, expr) {
+    const head = expr.match(IDENT_RE);
+    if (!head) return void 0;
+    let cur = vals == null ? void 0 : vals[head[0]];
+    let i = head[0].length;
+    while (i < expr.length) {
+      if (expr[i] === ".") {
+        const m = expr.slice(i + 1).match(IDENT_RE) || expr.slice(i + 1).match(/^\d+/);
+        if (!m) return void 0;
+        cur = cur == null ? void 0 : cur[m[0]];
+        i += 1 + m[0].length;
+      } else if (expr[i] === "[") {
+        let depth = 1;
+        let j = i + 1;
+        while (j < expr.length && depth > 0) {
+          if (expr[j] === "[") depth++;
+          else if (expr[j] === "]") {
+            depth--;
+            if (depth === 0) break;
+          }
+          j++;
+        }
+        if (depth !== 0) return void 0;
+        const key = resolve(vals, expr.slice(i + 1, j));
+        cur = cur == null ? void 0 : cur[key];
+        i = j + 1;
+      } else {
+        return void 0;
+      }
+    }
+    return cur;
+  }
+
+  // src/encode.ts
+  var CAMEL_ATTR = "sc-camel-";
+  var INLINE_TEXT_TAGS = new Set(
+    "a abbr b bdi bdo br cite code del dfn em i ins kbd mark q s samp small span strike strong sub sup u var wbr".split(
+      " "
+    )
+  );
+  var RAW_WRAP = {
+    select: "sc-raw-select",
+    table: "sc-raw-table",
+    tbody: "sc-raw-tbody",
+    thead: "sc-raw-thead",
+    tfoot: "sc-raw-tfoot",
+    tr: "sc-raw-tr",
+    td: "sc-raw-td",
+    th: "sc-raw-th",
+    caption: "sc-raw-caption"
+  };
+  var RAW_UNWRAP = Object.fromEntries(
+    Object.entries(RAW_WRAP).map(([k, v]) => [v, k])
+  );
+  var EVENT_MAP = {
+    onclick: "onClick",
+    onchange: "onChange",
+    oninput: "onInput",
+    onsubmit: "onSubmit",
+    onkeydown: "onKeyDown",
+    onkeyup: "onKeyUp",
+    onkeypress: "onKeyPress",
+    onmousedown: "onMouseDown",
+    onmouseup: "onMouseUp",
+    onmouseenter: "onMouseEnter",
+    onmouseleave: "onMouseLeave",
+    onfocus: "onFocus",
+    onblur: "onBlur",
+    ondoubleclick: "onDoubleClick",
+    oncontextmenu: "onContextMenu",
+    onmousemove: "onMouseMove",
+    onmouseover: "onMouseOver",
+    onmouseout: "onMouseOut",
+    onpointerdown: "onPointerDown",
+    onpointerup: "onPointerUp",
+    onpointermove: "onPointerMove",
+    onpointerenter: "onPointerEnter",
+    onpointerleave: "onPointerLeave",
+    onpointercancel: "onPointerCancel",
+    onpointerover: "onPointerOver",
+    onpointerout: "onPointerOut",
+    ongotpointercapture: "onGotPointerCapture",
+    onlostpointercapture: "onLostPointerCapture",
+    ontouchstart: "onTouchStart",
+    ontouchend: "onTouchEnd",
+    ontouchmove: "onTouchMove",
+    ontouchcancel: "onTouchCancel",
+    ondragstart: "onDragStart",
+    ondragend: "onDragEnd",
+    ondragenter: "onDragEnter",
+    ondragleave: "onDragLeave",
+    ondragover: "onDragOver",
+    onanimationstart: "onAnimationStart",
+    onanimationend: "onAnimationEnd",
+    onanimationiteration: "onAnimationIteration",
+    ontransitionend: "onTransitionEnd"
+  };
+  var ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+  var IMPORT_SELF_CLOSE_RE = new RegExp(
+    "<(x-import|dc-import)(" + ATTRS + ")/>",
+    "gi"
+  );
+  var CAMEL_ATTR_RE = /(\s)([a-z]+[A-Z][A-Za-z0-9]*)(\s*=)/g;
+  function encodeCamelAttrs(html) {
+    return html.replace(
+      CAMEL_ATTR_RE,
+      (_, sp, name, eq) => sp + CAMEL_ATTR + name.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()) + eq
+    );
+  }
+  function encodeCase(html) {
+    html = html.replace(
+      IMPORT_SELF_CLOSE_RE,
+      (_, t, a) => "<" + t + a + "></" + t + ">"
+    );
+    html = html.replace(/<helmet(\s|>)/gi, "<sc-helmet$1");
+    html = html.replace(/<\/helmet\s*>/gi, "</sc-helmet>");
+    html = encodeCamelAttrs(html);
+    for (const [real, alias] of Object.entries(RAW_WRAP)) {
+      html = html.replace(
+        new RegExp("(</?)" + real + "(?=[\\s>])", "gi"),
+        "$1" + alias
+      );
+    }
+    return html;
+  }
+  function kebabToCamel(s) {
+    return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  }
+  function cssToObj(css) {
+    const o = {};
+    for (const decl of css.split(";")) {
+      const i = decl.indexOf(":");
+      if (i < 0) continue;
+      const prop = decl.slice(0, i).trim();
+      o[prop.startsWith("--") ? prop : kebabToCamel(prop)] = decl.slice(i + 1).trim();
+    }
+    return o;
+  }
+  function compileAttr(raw) {
+    const whole = raw.match(/^\s*\{\{([\s\S]+?)\}\}\s*$/);
+    if (whole) {
+      const path = whole[1];
+      return (vals) => resolve(vals, path);
+    }
+    if (raw.includes("{{")) {
+      const parts = raw.split(/\{\{([\s\S]+?)\}\}/g);
+      return (vals) => parts.map((s, i) => i & 1 ? resolve(vals, s) ?? "" : s).join("");
+    }
+    return () => raw;
+  }
+
+  // src/compile.ts
+  function collectProps(node, kind, host) {
+    const propGetters = [];
+    const pseudoClasses = [];
+    let hintSize = null;
+    for (const { name, value } of [...node.attributes]) {
+      if (name === "sc-name" || name === "data-dc-tpl") continue;
+      let key = name;
+      if (key.startsWith(CAMEL_ATTR))
+        key = kebabToCamel(key.slice(CAMEL_ATTR.length));
+      if (key === "hint-size") {
+        hintSize = value;
+        continue;
+      }
+      if (key.startsWith("style-")) {
+        pseudoClasses.push(host.pseudoClass(key.slice(6), value));
+        continue;
+      }
+      if (kind !== "dom") {
+        if (key.includes("-") && !(kind === "x-import" && (key.startsWith("aria-") || key.startsWith("data-"))))
+          key = kebabToCamel(key);
+      } else {
+        if (key === "class") key = "className";
+        else if (key === "for") key = "htmlFor";
+        else if (key.startsWith("on"))
+          key = EVENT_MAP[key] || "on" + key[2].toUpperCase() + key.slice(3);
+      }
+      propGetters.push([key, compileAttr(value)]);
+    }
+    return { propGetters, pseudoClasses, hintSize };
+  }
+  var HOST_STYLE_PROPS = /* @__PURE__ */ new Set([
+    "position",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "inset",
+    "width",
+    "height",
+    "z-index",
+    "transform"
+  ]);
+  function hostPositionStyle(style) {
+    const all = typeof style === "string" ? cssToObj(style) : style != null && typeof style === "object" ? style : null;
+    if (!all) return void 0;
+    const out = {};
+    for (const [k, v] of Object.entries(all)) {
+      const kebab = k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+      if (HOST_STYLE_PROPS.has(kebab)) out[k] = v;
+    }
+    return Object.keys(out).length ? out : void 0;
+  }
+  function compileTemplate(html, host) {
+    const tpl = document.createElement("template");
+    //! nosemgrep: direct-inner-html-assignment
+    tpl.innerHTML = encodeCase(html);
+    let tplN = 0;
+    (function stamp(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        node.setAttribute("data-dc-tpl", String(tplN++));
+      }
+      for (const c of node.childNodes) stamp(c);
+    })(tpl.content);
+    const builders = walkChildren(tpl.content, host);
+    const render = ((vals, ctx) => builders.map((b, i) => b(vals || {}, ctx, i)));
+    render.__annotated = tpl.innerHTML;
+    return render;
+  }
+  function walkChildren(node, host) {
+    return [...node.childNodes].map((c) => walk(c, host)).filter((b) => b != null);
+  }
+  var SLIDE_ID_VALUE_RE = /^[0-9a-f]{8}$/;
+  var DECK_CONTROL_FLOW_RE = /^(sc-if|sc-for|sc-else|dc-import|x-import)$/;
+  var DECK_AUX_RE = /^(template|script|style|sc-helmet|helmet)$/;
+  function isDeckMountTag(el) {
+    if (el.localName === "deck-stage") return true;
+    return el.localName === "x-import" && (el.getAttribute("component-from-global-scope") || "") === "deck-stage";
+  }
+  function walkDeckChildren(el, host) {
+    const pairs = [...el.childNodes].map((c) => ({ c, b: walk(c, host) })).filter((p) => p.b !== null);
+    const kids = pairs.map((p) => p.b);
+    const seen = /* @__PURE__ */ new Set();
+    const wsSeen = /* @__PURE__ */ new Map();
+    const keys = [];
+    const nextSlideId = new Array(pairs.length);
+    {
+      let upcoming = null;
+      for (let j = pairs.length - 1; j >= 0; j--) {
+        const n = pairs[j].c;
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          const t = n.localName;
+          upcoming = !DECK_AUX_RE.test(t) && !DECK_CONTROL_FLOW_RE.test(t) ? n.getAttribute("data-om-slide-id") : null;
+        }
+        nextSlideId[j] = upcoming;
+      }
+    }
+    for (let j = 0; j < pairs.length; j++) {
+      const { c } = pairs[j];
+      if (c.nodeType === Node.TEXT_NODE) {
+        if ((c.nodeValue ?? "").trim() === "") {
+          const base = nextSlideId[j] ? "omid-ws:" + nextSlideId[j] : "omid-ws:aux";
+          const n = wsSeen.get(base) ?? 0;
+          wsSeen.set(base, n + 1);
+          keys.push(n === 0 ? base : base + ":" + n);
+          continue;
+        }
+        return { kids, keys: null };
+      }
+      if (c.nodeType !== Node.ELEMENT_NODE) {
+        keys.push(j);
+        continue;
+      }
+      const child = c;
+      const tag = child.localName;
+      if (DECK_AUX_RE.test(tag)) {
+        keys.push(j);
+        continue;
+      }
+      if (DECK_CONTROL_FLOW_RE.test(tag)) return { kids, keys: null };
+      const v = child.getAttribute("data-om-slide-id");
+      if (!v || !SLIDE_ID_VALUE_RE.test(v) || seen.has(v)) {
+        return { kids, keys: null };
+      }
+      seen.add(v);
+      keys.push("omid:" + v);
+    }
+    return { kids, keys };
+  }
+  function renderDeckKids(kids, kidKeys, vals, ctx) {
+    return kids.map((b, j) => {
+      const k = kidKeys ? kidKeys[j] : j;
+      const out = b(vals, ctx, k);
+      return kidKeys != null && typeof out === "string" ? h(getReact().Fragment, { key: k }, out) : out;
+    });
+  }
+  function walk(node, host) {
+    if (node.nodeType === Node.TEXT_NODE) return walkText(node);
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+    const el = node;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "sc-for") return walkFor(el, host);
+    if (tag === "sc-if") return walkIf(el, host);
+    if (tag === "x-import") return walkXImport(el, host);
+    if (tag === "sc-helmet") return host.helmet(el);
+    if (tag === "dc-import") return walkComponent(el, host);
+    return walkElement(el, host);
+  }
+  var warnedHoles = /* @__PURE__ */ new Set();
+  function warnUnresolved(ctx, what) {
+    const key = (ctx?.__name || "?") + "\0" + what;
+    if (warnedHoles.has(key)) return;
+    warnedHoles.add(key);
+    console.warn("[dc-runtime] " + (ctx?.__name || "template") + ": " + what);
+  }
+  function walkText(node) {
+    const txt = node.nodeValue ?? "";
+    if (!txt.includes("{{")) {
+      if (!txt.trim() && !txt.includes(" ")) return null;
+      return () => txt;
+    }
+    const parts = txt.split(/\{\{([\s\S]+?)\}\}/g);
+    return (vals, ctx, key) => h(
+      getReact().Fragment,
+      { key },
+      ...parts.map((p, i) => {
+        if (!(i & 1)) return p;
+        const v = resolve(vals, p);
+        if (v === void 0) {
+          if (!ctx?.__streamingNow) {
+            if (document.body?.hasAttribute("data-dc-editor-on")) {
+              return h(
+                "span",
+                { key: i, className: "sc-interp sc-unresolved" },
+                "{{ " + p.trim() + " }}"
+              );
+            }
+            warnUnresolved(
+              ctx,
+              "{{ " + p.trim() + " }} never resolved \u2014 rendered as empty"
+            );
+            return null;
+          }
+          return h(
+            "span",
+            { key: i, className: "sc-interp sc-missing" },
+            p.trim()
+          );
+        }
+        if (getReact().isValidElement(v) || Array.isArray(v)) {
+          return h(getReact().Fragment, { key: i }, v);
+        }
+        if (v === null || typeof v === "boolean") return null;
+        return h("span", { key: i, className: "sc-interp" }, String(v));
+      })
+    );
+  }
+  function walkFor(el, host) {
+    const listGet = compileAttr(el.getAttribute("list") || "");
+    const asName = el.getAttribute("as") || "item";
+    const hintN = parseInt(el.getAttribute("hint-placeholder-count") || "0", 10);
+    const kids = walkChildren(el, host);
+    const listSrc = el.getAttribute("list") || "";
+    return (vals, ctx, key) => {
+      let list = listGet(vals);
+      if (!Array.isArray(list)) {
+        if (!ctx?.__streamingNow) {
+          if (list !== void 0 && list !== null) {
+            warnUnresolved(
+              ctx,
+              'sc-for list="' + listSrc + '" is not an array (' + typeof list + ")"
+            );
+          }
+          list = [];
+        } else {
+          list = hintN > 0 ? Array(hintN).fill(void 0) : [];
+        }
+      }
+      return h(
+        getReact().Fragment,
+        { key },
+        list.map((item, i) => {
+          const sub = { ...vals, [asName]: item, $index: i };
+          return h(
+            getReact().Fragment,
+            { key: i },
+            kids.map((b, j) => b(sub, ctx, j))
+          );
+        })
+      );
+    };
+  }
+  function walkIf(el, host) {
+    const valGet = compileAttr(el.getAttribute("value") || "");
+    const hintRaw = el.getAttribute("hint-placeholder-val");
+    const hintGet = hintRaw != null ? compileAttr(hintRaw) : null;
+    const kids = walkChildren(el, host);
+    return (vals, ctx, key) => {
+      let v = valGet(vals);
+      if (v === void 0 && hintGet && ctx?.__streamingNow) v = hintGet(vals);
+      return v ? h(
+        getReact().Fragment,
+        { key },
+        kids.map((b, j) => b(vals, ctx, j))
+      ) : null;
+    };
+  }
+  function walkComponent(el, host) {
+    const name = el.getAttribute("name") || el.getAttribute("component") || "";
+    el.removeAttribute("name");
+    el.removeAttribute("component");
+    const tplId = el.getAttribute("data-dc-tpl");
+    const styleRaw = el.getAttribute("style");
+    el.removeAttribute("style");
+    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
+    const { propGetters, hintSize } = collectProps(el, "dc-import", host);
+    const kids = walkChildren(el, host);
+    return (vals, ctx, key) => {
+      const props = {
+        key,
+        __hintSize: hintSize,
+        __tplId: tplId,
+        __hostStyle: styleGet ? hostPositionStyle(styleGet(vals)) : void 0
+      };
+      for (const [k, g] of propGetters) {
+        const v = g(vals);
+        if (k === "dcProps") {
+          if (v && typeof v === "object") Object.assign(props, v);
+          continue;
+        }
+        props[k] = v;
+      }
+      if (kids.length) props.children = kids.map((b, j) => b(vals, ctx, j));
+      return h(host.component(name), props);
+    };
+  }
+  function walkXImport(el, host) {
+    const globalNameGet = compileAttr(
+      el.getAttribute("component-from-global-scope") || ""
+    );
+    const exportNameGet = compileAttr(
+      el.getAttribute("component") || el.getAttribute("name") || ""
+    );
+    const fromRaw = el.getAttribute("from") || (el.getAttribute("component-from-global-scope") ? "" : el.getAttribute("src") || el.getAttribute("import") || "");
+    const urls = fromRaw.trim() ? fromRaw.trim().split(/\s+/) : [];
+    const url = urls.length ? urls[urls.length - 1] : "";
+    const kindOf = (u) => /\.(jsx|tsx)(\?|#|$)/i.test(u) ? "jsx" : "js";
+    const tplId = el.getAttribute("data-dc-tpl");
+    const styleRaw = el.getAttribute("style");
+    el.removeAttribute("style");
+    const styleGet = styleRaw != null ? compileAttr(styleRaw) : null;
+    const wrap = tplId != null || styleGet != null;
+    const { propGetters, hintSize } = collectProps(el, "x-import", host);
+    const hasContent = el.children.length > 0 || !!(el.textContent || "").trim();
+    const deckKeyed = hasContent && isDeckMountTag(el) ? walkDeckChildren(el, host) : null;
+    const kids = deckKeyed ? deckKeyed.kids : hasContent ? walkChildren(el, host) : [];
+    const kidKeys = deckKeyed?.keys ?? null;
+    const urlBindable = fromRaw.includes("{{");
+    if (urls.length && !urlBindable) {
+      let prev;
+      for (const u of urls) prev = host.loadExternal(kindOf(u), u, prev);
+    }
+    const evalName = (g, vals) => {
+      const v = g(vals);
+      const s = v == null ? "" : String(v);
+      return s.includes("{{") ? "" : s;
+    };
+    return (vals, ctx, key) => {
+      const globalName = evalName(globalNameGet, vals);
+      const name = globalName || evalName(exportNameGet, vals);
+      const C = !name || urlBindable ? null : globalName ? host.resolveExternalGlobal(url, globalName) : host.resolveExternal(url, name);
+      const hostStyle = styleGet ? hostPositionStyle(styleGet(vals)) : void 0;
+      const wrapper = wrap ? {
+        key,
+        className: "sc-host-x",
+        "data-dc-tpl": tplId,
+        style: hostStyle || { display: "contents" }
+      } : null;
+      if (!C) {
+        const error = urlBindable ? "x-import `from` cannot contain {{ \u2026 }} \u2014 module URLs are resolved at parse time; use a literal URL" : host.resolveExternalError(url, name);
+        const ph = host.placeholder({
+          key: wrapper ? void 0 : key,
+          name,
+          hintSize,
+          error
+        });
+        return wrapper ? h("div", wrapper, ph) : ph;
+      }
+      const props = wrapper ? {} : { key };
+      let unresolvedHole = false;
+      for (const [k, g] of propGetters) {
+        if (k === "component" || k === "componentFromGlobalScope" || k === "from") {
+          continue;
+        }
+        const v = g(vals);
+        if (v === void 0) unresolvedHole = true;
+        if (k === "dcProps") {
+          if (v && typeof v === "object") Object.assign(props, v);
+          continue;
+        }
+        props[k] = v;
+      }
+      if (unresolvedHole && ctx?.__htmlStreamingNow) {
+        const ph = host.placeholder({
+          key: wrapper ? void 0 : key,
+          name,
+          hintSize,
+          error: null
+        });
+        return wrapper ? h("div", wrapper, ph) : ph;
+      }
+      if (kids.length) {
+        props.children = renderDeckKids(kids, kidKeys, vals, ctx);
+      }
+      return wrapper ? h("div", wrapper, h(C, props)) : h(C, props);
+    };
+  }
+  function contentKey(el) {
+    const clone = el.cloneNode(true);
+    for (const d of clone.querySelectorAll("*")) {
+      while (d.attributes.length) d.removeAttribute(d.attributes[0].name);
+    }
+    const s = clone.innerHTML;
+    let h2 = 5381;
+    for (let i = 0; i < s.length; i++) h2 = (h2 << 5) + h2 + s.charCodeAt(i) | 0;
+    return s.length + "." + (h2 >>> 0).toString(36);
+  }
+  var NEVER_CONTENT_KEYED = new Set(
+    "script style textarea option title select canvas iframe video audio".split(
+      " "
+    )
+  );
+  var NOT_INLINE_SELECTOR = ":not(" + [...INLINE_TEXT_TAGS].join(",") + ")";
+  function walkElement(el, host) {
+    const realTag = RAW_UNWRAP[el.localName] || el.localName;
+    const tplId = el.getAttribute("data-dc-tpl");
+    const inlineOnly = el.childNodes.length > 0 && !NEVER_CONTENT_KEYED.has(realTag) && el.querySelector(NOT_INLINE_SELECTOR) === null;
+    const keySuffix = inlineOnly ? "|" + contentKey(el) : "";
+    const { propGetters, pseudoClasses } = collectProps(el, "dom", host);
+    const deckKeyed = isDeckMountTag(el) ? walkDeckChildren(el, host) : null;
+    const kids = deckKeyed ? deckKeyed.kids : walkChildren(el, host);
+    const kidKeys = deckKeyed?.keys ?? null;
+    return (vals, ctx, key) => {
+      const props = {
+        key: key + keySuffix,
+        "data-dc-tpl": tplId
+      };
+      for (const [k, g] of propGetters) {
+        let v = g(vals);
+        if (k === "style" && typeof v === "string") v = cssToObj(v);
+        if ((k === "value" || k === "checked") && v === void 0) {
+          v = k === "checked" ? false : "";
+        }
+        props[k] = v;
+      }
+      if (pseudoClasses.length) {
+        props.className = [props.className, ...pseudoClasses].filter(Boolean).join(" ");
+      }
+      return h(realTag, props, ...renderDeckKids(kids, kidKeys, vals, ctx));
+    };
+  }
+
+  // src/logic.ts
+  var StreamableLogic = class {
+    constructor(props) {
+      __publicField(this, "props");
+      __publicField(this, "state", {});
+      /** Back-pointer to the wrapper component, installed after construction. */
+      __publicField(this, "__host");
+      this.props = props || {};
+    }
+    setState(update, cb) {
+      this.__host && this.__host.__setLogicState(update, cb);
+    }
+    forceUpdate() {
+      this.__host && this.__host.forceUpdate();
+    }
+    componentDidMount() {
+    }
+    componentDidUpdate(_prevProps) {
+    }
+    componentWillUnmount() {
+    }
+    /** The flat object the template renders against (merged over props). */
+    renderVals() {
+      return {};
+    }
+  };
+  function evalDcLogic(src) {
+    //! nosemgrep: eval-and-function-constructor
+    const fn = new Function(
+      "DCLogic",
+      "StreamableLogic",
+      "React",
+      src + '\n;return (typeof Component!=="undefined"&&Component)||undefined;'
+    );
+    return fn(StreamableLogic, StreamableLogic, getReact());
+  }
+
+  // src/component.ts
+  function shallowEqual(a, b) {
+    if (!b) return false;
+    const ak = Object.keys(a).filter((k) => k !== "children");
+    const bk = Object.keys(b).filter((k) => k !== "children");
+    if (ak.length !== bk.length) return false;
+    for (const k of ak) if (a[k] !== b[k]) return false;
+    return true;
+  }
+  function Placeholder({
+    name,
+    hintSize,
+    streaming,
+    error
+  }) {
+    const [w, hgt] = (hintSize || "100%,60px").split(",");
+    return h(
+      "div",
+      {
+        className: "sc-placeholder" + (streaming ? " sc-streaming" : ""),
+        style: { width: w.trim(), height: hgt && hgt.trim() },
+        title: name
+      },
+      error ? h(
+        "div",
+        { className: "sc-placeholder-error" },
+        (name ? name + ": " : "") + error
+      ) : null
+    );
+  }
+  function hintToMin(hint) {
+    if (!hint) return void 0;
+    const [w, hgt] = hint.split(",");
+    return { minWidth: w.trim(), minHeight: hgt && hgt.trim() };
+  }
+  function createComponentFactory(registry, ensureFetched) {
+    const React = getReact();
+    const AncestorContext = React.createContext([]);
+    class StreamableComponent extends React.Component {
+      constructor(props) {
+        super(props);
+        __publicField(this, "__name");
+        __publicField(this, "__sub");
+        __publicField(this, "__needsDidMount", false);
+        /** Snapshot of the registry's streaming flags taken at render time —
+         *  builders read it off the RenderCtx (this) to pick placeholder vs
+         *  render-nothing for unresolved values. */
+        __publicField(this, "__streamingNow", false);
+        __publicField(this, "__htmlStreamingNow", false);
+        /** When a construct throws, remember the (class, registry.ver, props)
+         *  triple so render-time reconcile doesn't re-attempt it on every parent
+         *  re-render. A registry bump (new class, template, external module
+         *  resolving via bumpAll) changes `ver` and breaks the memo so an
+         *  env-dependent constructor can self-heal. */
+        __publicField(this, "__failedLogic", null);
+        __publicField(this, "__failedUserProps", null);
+        __publicField(this, "__failedVer", -1);
+        /** Per-instance constructor error — kept here (not on the registry entry)
+         *  so one instance's successful construct can't hide a sibling's failure,
+         *  and a construct can never wipe an eval error `updateJs` recorded on
+         *  `r.logicError`. */
+        __publicField(this, "__ctorError", null);
+        __publicField(this, "logic");
+        this.__name = props.__name;
+        this.state = { __v: 0, __err: null };
+        this.__sub = () => {
+          if (this.state.__err) this.setState({ __err: null });
+          this.forceUpdate();
+        };
+        this.__makeLogic(registry.get(this.__name).Logic, null);
+        ensureFetched(this.__name);
+      }
+      /** Error-boundary hook: a render crash anywhere in this DC's subtree
+       *  (its own template, an x-import'd component, a child DC without its
+       *  own deeper boundary) lands here instead of unmounting the page. */
+      static getDerivedStateFromError(e) {
+        return { __err: e instanceof Error && e.message ? e.message : String(e) };
+      }
+      componentDidCatch(e, info) {
+        console.error(
+          "[dc-runtime] render error in <" + this.__name + ">:",
+          e,
+          info?.componentStack || ""
+        );
+      }
+      /** Instantiate the logic class (or the no-op base) and adopt `prevState`
+       *  over its initial state — used both at mount and on hot-swap. */
+      __makeLogic(Logic, prevState) {
+        const L = Logic || StreamableLogic;
+        try {
+          this.logic = new L(this.__userProps());
+          this.__failedLogic = null;
+          this.__failedUserProps = null;
+          this.__ctorError = null;
+        } catch (e) {
+          console.error(e);
+          this.__failedLogic = Logic;
+          this.__failedUserProps = this.__userProps();
+          this.__failedVer = registry.get(this.__name).ver;
+          this.__ctorError = this.__name + ": " + (e instanceof Error && e.message ? e.message : String(e));
+          this.logic = new StreamableLogic(
+            this.__userProps()
+          );
+        }
+        this.logic.__host = this;
+        if (prevState)
+          this.logic.state = { ...this.logic.state || {}, ...prevState };
+      }
+      /** The props the author's logic + template see — internal __-prefixed
+       *  wiring stripped. */
+      __userProps() {
+        const { __name, __hintSize, __tplId, __hostStyle, ...rest } = this.props;
+        return rest;
+      }
+      __setLogicState(update, cb) {
+        const prev = this.logic.state;
+        const patch = typeof update === "function" ? update(prev) : update;
+        this.logic.state = { ...prev, ...patch };
+        this.setState((s) => ({ __v: s.__v + 1 }), cb);
+      }
+      /** Swap the logic instance when the registry's Logic class changed
+       *  (streaming completion, hot reload). State carries over; didMount
+       *  re-fires after the swap commits so refs exist. */
+      __reconcileLogic() {
+        const r = registry.get(this.__name);
+        const Next = r.Logic;
+        const Cur = this.logic.constructor;
+        if (Next === Cur || !Next && Cur === StreamableLogic || Next === this.__failedLogic && r.ver === this.__failedVer && shallowEqual(this.__userProps(), this.__failedUserProps)) {
+          return;
+        }
+        if (!this.__needsDidMount) {
+          try {
+            this.logic.componentWillUnmount();
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        this.__makeLogic(Next, this.logic.state);
+        this.__needsDidMount = true;
+      }
+      componentDidMount() {
+        registry.get(this.__name).subs.add(this.__sub);
+        try {
+          this.logic.componentDidMount();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      componentDidUpdate(prevProps) {
+        this.logic.props = this.__userProps();
+        if (this.__needsDidMount) {
+          if (this.state.__err || !registry.get(this.__name).tpl) return;
+          this.__needsDidMount = false;
+          try {
+            this.logic.componentDidMount();
+          } catch (e) {
+            console.error(e);
+          }
+        } else {
+          try {
+            this.logic.componentDidUpdate(prevProps);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+      componentWillUnmount() {
+        registry.get(this.__name).subs.delete(this.__sub);
+        if (!this.__needsDidMount) {
+          try {
+            this.logic.componentWillUnmount();
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+      render() {
+        const r = registry.get(this.__name);
+        const cls = "sc-host" + (r.htmlStreaming ? " sc-streaming-html" : "") + (r.jsStreaming ? " sc-streaming-js" : "");
+        const hintStyle = r.htmlStreaming ? hintToMin(this.props.__hintSize) : void 0;
+        const hostStyle = this.props.__hostStyle || hintStyle ? { ...hintStyle || {}, ...this.props.__hostStyle || {} } : void 0;
+        const hostBase = {
+          className: cls,
+          style: hostStyle,
+          "data-sc-name": this.__name,
+          "data-dc-tpl": this.props.__tplId
+        };
+        const chain = Array.isArray(this.context) ? this.context : [];
+        if (chain.includes(this.__name)) {
+          const cycle = [
+            ...chain.slice(chain.indexOf(this.__name)),
+            this.__name
+          ].join(" \u2192 ");
+          return h(
+            "div",
+            { ...hostBase, className: cls + " sc-has-error" },
+            h(Placeholder, {
+              name: this.__name,
+              hintSize: this.props.__hintSize,
+              error: "circular import: " + cycle
+            })
+          );
+        }
+        if (this.state.__err) {
+          return h(
+            "div",
+            { ...hostBase, className: cls + " sc-has-error" },
+            h(
+              "div",
+              { className: "sc-logic-error", "data-omelette-chrome": "" },
+              this.__name + ": " + this.state.__err
+            ),
+            h(Placeholder, {
+              name: this.__name,
+              hintSize: this.props.__hintSize,
+              error: this.state.__err
+            })
+          );
+        }
+        this.__reconcileLogic();
+        if (!r.tpl) {
+          return h(
+            "div",
+            hostBase,
+            h(Placeholder, { name: this.__name, hintSize: this.props.__hintSize })
+          );
+        }
+        const userProps = this.__userProps();
+        this.logic.props = userProps;
+        let vals = userProps;
+        let renderErr = r.logicError || this.__ctorError;
+        try {
+          vals = { ...userProps, ...this.logic.renderVals() || {} };
+        } catch (e) {
+          console.error(e);
+          renderErr = this.__name + ".renderVals(): " + (e instanceof Error && e.message ? e.message : String(e));
+        }
+        this.__streamingNow = !!(r.htmlStreaming || r.jsStreaming);
+        this.__htmlStreamingNow = !!r.htmlStreaming;
+        return h(
+          "div",
+          { ...hostBase, className: cls + (renderErr ? " sc-has-error" : "") },
+          renderErr && h(
+            "div",
+            { className: "sc-logic-error", "data-omelette-chrome": "" },
+            renderErr
+          ),
+          h(
+            AncestorContext.Provider,
+            { value: [...chain, this.__name] },
+            r.tpl(vals, this)
+          )
+        );
+      }
+    }
+    __publicField(StreamableComponent, "contextType", AncestorContext);
+    const named = /* @__PURE__ */ new Map();
+    function getDC(name) {
+      const hit = named.get(name);
+      if (hit) return hit;
+      function Dispatcher(p) {
+        const [, setTick] = React.useState(0);
+        React.useEffect(() => {
+          const sub = () => setTick((n) => n + 1);
+          registry.get(name).subs.add(sub);
+          return () => {
+            registry.get(name).subs.delete(sub);
+          };
+        }, []);
+        ensureFetched(name);
+        return h(StreamableComponent, { ...p, __name: name });
+      }
+      Dispatcher.displayName = name;
+      named.set(name, Dispatcher);
+      return Dispatcher;
+    }
+    return {
+      getDC,
+      StreamableComponent
+    };
+  }
+
+  // src/bundled.ts
+  function bundledBlob(url) {
+    const blobs = window.__resourceBlobs;
+    const b = blobs ? blobs[url.split("#")[0]] : void 0;
+    return b instanceof Blob ? b : null;
+  }
+
+  // src/cdn.ts
+  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
+  var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
+  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
+  var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
+  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js";
+  var BABEL_SRI = "sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";
+  function cdnScriptFor(url, sri) {
+    const res = window.__resources;
+    const v = res ? res[url] : void 0;
+    return typeof v === "string" && v ? { src: v } : { src: url, integrity: sri };
+  }
+
+  // src/external.ts
+  var isCustomElementName = (n) => !n.includes(".") && n.includes("-");
+  function isRenderableType(g) {
+    if (typeof g === "function") return !isElementClass(g);
+    return typeof g === "object" && g !== null && typeof g.$$typeof === "symbol";
+  }
+  function resolveDottedPath(root, name) {
+    let cur = root;
+    for (const seg of name.split(".")) {
+      if (cur == null) return void 0;
+      cur = cur[seg];
+    }
+    return cur;
+  }
+  var GLOBAL_POLL_INTERVAL_MS = 50;
+  var GLOBAL_POLL_TIMEOUT_MS = 3e4;
+  function createExternalModules(onResolved) {
+    const cache = /* @__PURE__ */ new Map();
+    let babelLoading = null;
+    const reportedMissing = /* @__PURE__ */ new Map();
+    const polling = /* @__PURE__ */ new Set();
+    function ensureBabel() {
+      if (window.Babel) return Promise.resolve();
+      if (babelLoading) return babelLoading;
+      const babel = cdnScriptFor(BABEL_URL, BABEL_SRI);
+      babelLoading = new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = babel.src;
+        if (babel.integrity) {
+          s.integrity = babel.integrity;
+          s.crossOrigin = "anonymous";
+        }
+        s.onload = () => res();
+        s.onerror = rej;
+        document.head.appendChild(s);
+      });
+      return babelLoading;
+    }
+    const pending = /* @__PURE__ */ new Map();
+    function load(kind, url, after) {
+      const existing = pending.get(url);
+      if (existing) return existing;
+      cache.set(url, null);
+      console.info("[dc-runtime] x-import: loading", url, "(" + kind + ")");
+      const ready = Promise.all([
+        kind === "jsx" ? ensureBabel() : Promise.resolve(),
+        after ?? Promise.resolve()
+      ]);
+      const p = ready.then(() => {
+        const pre = bundledBlob(url);
+        if (pre) return pre.text();
+        return fetch(url).then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        });
+      }).then((src) => {
+        const code = kind === "jsx" ? window.Babel.transform(src, {
+          filename: url,
+          presets: ["react", "typescript"]
+        }).code : src;
+        const module = { exports: {} };
+        const before = new Set(Object.keys(window));
+        //! nosemgrep: eval-and-function-constructor
+        new Function("React", "module", "exports", "require", code)(
+          getReact(),
+          module,
+          module.exports,
+          () => ({})
+        );
+        const globals = {};
+        for (const k of Object.keys(window)) {
+          if (!before.has(k) && typeof window[k] === "function") {
+            globals[k] = window[k];
+          }
+        }
+        cache.set(url, { mod: module.exports, globals });
+        console.info(
+          "[dc-runtime] x-import: loaded",
+          url,
+          "\u2014 exports:",
+          Object.keys(module.exports),
+          "window globals:",
+          Object.keys(globals)
+        );
+        onResolved();
+      }).catch((e) => {
+        cache.set(url, {
+          mod: {},
+          globals: {},
+          error: "failed to load: " + (e instanceof Error && e.message ? e.message : String(e))
+        });
+        console.error(
+          "[dc-runtime] x-import: FAILED to load",
+          url,
+          "(" + kind + ")",
+          e
+        );
+        onResolved();
+      });
+      pending.set(url, p);
+      return p;
+    }
+    function resolve2(url, name) {
+      const entry = cache.get(url);
+      if (!entry) return null;
+      const { mod, globals } = entry;
+      const C = mod && mod[name] || globals && globals[name] || typeof window !== "undefined" && window[name] || mod && mod.default;
+      if (typeof C === "function") return C;
+      const key = url + "\0" + name;
+      if (!reportedMissing.has(key)) {
+        reportedMissing.set(
+          key,
+          entry.error || 'no export named "' + name + '" (has: ' + Object.keys(mod).join(", ") + ")"
+        );
+        console.error(
+          "[dc-runtime] x-import: module",
+          url,
+          "loaded but has no component named",
+          JSON.stringify(name),
+          "\u2014 available exports:",
+          Object.keys(mod),
+          "window globals:",
+          Object.keys(globals),
+          ". The module must `module.exports = {" + name + "}` or set `window." + name + "`."
+        );
+      }
+      return null;
+    }
+    function waitForGlobal(name) {
+      if (polling.has(name)) return;
+      polling.add(name);
+      const started = Date.now();
+      const isCE = isCustomElementName(name);
+      const tick = () => {
+        const found = isCE ? customElements.get(name) : isRenderableType(resolveDottedPath(window, name));
+        if (found) {
+          polling.delete(name);
+          onResolved();
+          return;
+        }
+        if (Date.now() - started >= GLOBAL_POLL_TIMEOUT_MS) {
+          console.warn(
+            "[dc-runtime] x-import: global",
+            JSON.stringify(name),
+            "never appeared on window after " + GLOBAL_POLL_TIMEOUT_MS + "ms"
+          );
+          return;
+        }
+        setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
+      };
+      setTimeout(tick, GLOBAL_POLL_INTERVAL_MS);
+    }
+    function resolveGlobal(url, name) {
+      const isCE = isCustomElementName(name);
+      if (!url) {
+        if (isCE) {
+          if (customElements.get(name)) return name;
+          waitForGlobal(name);
+          return null;
+        }
+        const g2 = resolveDottedPath(window, name);
+        if (isRenderableType(g2)) return g2;
+        waitForGlobal(name);
+        return null;
+      }
+      const entry = cache.get(url);
+      if (!entry) return null;
+      if (isCE && customElements.get(name)) return name;
+      const g = entry.globals[name] ?? resolveDottedPath(window, name);
+      if (isRenderableType(g)) return g;
+      if (name.includes(".")) return null;
+      const key = url + "\0global\0" + name;
+      if (!reportedMissing.has(key)) {
+        reportedMissing.set(key, null);
+        if (isCE && !customElements.get(name)) {
+          console.warn(
+            "[dc-runtime] x-import:",
+            url,
+            "loaded but no custom element",
+            JSON.stringify(name),
+            "is registered and window." + name + " is not a function \u2014 rendering <" + name + "> as an unknown element."
+          );
+        }
+      }
+      return name;
+    }
+    function getError(url, name) {
+      const entry = cache.get(url);
+      if (entry?.error) return entry.error;
+      return reportedMissing.get(url + "\0" + name) || null;
+    }
+    return { load, resolve: resolve2, resolveGlobal, getError };
+  }
+  function isElementClass(g) {
+    try {
+      return typeof g === "function" && typeof HTMLElement !== "undefined" && g.prototype instanceof HTMLElement;
+    } catch {
+      return false;
+    }
+  }
+
+  // src/atomics.ts
+  var ATOMIC_CSS = (
+    // layout
+    ".fx{display:flex}.col{display:flex;flex-direction:column}.grid{display:grid}.ac{align-items:center}.jc{justify-content:center}.jb{justify-content:space-between}.f1{flex:1}.noshrink{flex-shrink:0}.wrap{flex-wrap:wrap}.fw5{font-weight:500}.fw6{font-weight:600}.fw7{font-weight:700}.fw8{font-weight:800}.fs11{font-size:11px}.fs12{font-size:12px}.fs13{font-size:13px}.fs14{font-size:14px}.fs15{font-size:15px}.fs16{font-size:16px}.fs20{font-size:20px}.fs22{font-size:22px}.upper{text-transform:uppercase}.tc{text-align:center}.nowrap{white-space:nowrap}.gap8{gap:8px}.gap10{gap:10px}.gap12{gap:12px}.gap16{gap:16px}.gap24{gap:24px}.m0{margin:0}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.posrel{position:relative}.posabs{position:absolute}.round{border-radius:50%}.ohide{overflow:hidden}.bbox{box-sizing:border-box}.pointer{cursor:pointer}.w100{width:100%}.b0{border:none}"
+  );
+
+  // src/helmet.ts
+  var DESIGN_DOC_MODE_RE = /<meta\b[^>]*\bname\s*=\s*["']design_doc_mode["'][^>]*\b(?:content|value)\s*=\s*["'](\w+)["']/i;
+  var CANVAS_BG_LIGHT = "#f0eee6";
+  var CANVAS_BG_DARK = "#2e2c26";
+  function createHelmetManager(doc, isStreaming) {
+    const mounted = /* @__PURE__ */ new Set();
+    const live = /* @__PURE__ */ new Map();
+    let designDocMode = null;
+    let canvasStyleEl = null;
+    let appTheme = "light";
+    try {
+      const ds = doc.documentElement.dataset.theme;
+      appTheme = ds === "dark" || ds === "light" ? ds : new URLSearchParams(doc.defaultView?.location.search ?? "").get(
+        "theme"
+      ) === "dark" ? "dark" : "light";
+    } catch {
+    }
+    function applyCanvasBg() {
+      if (!canvasStyleEl) return;
+      const bg = appTheme === "dark" ? CANVAS_BG_DARK : CANVAS_BG_LIGHT;
+      canvasStyleEl.textContent = `html,body{background:${bg}}#dc-root>.sc-host{position:relative}`;
+    }
+    function postDesignMode(mode) {
+      if (window.parent === window) return;
+      try {
+        window.parent.postMessage({ type: "__dc_design_mode", mode }, "*");
+      } catch {
+      }
+    }
+    function setDesignDocMode(mode) {
+      if (mode === designDocMode) return;
+      designDocMode = mode;
+      postDesignMode(mode);
+      if (mode === "canvas") {
+        doc.documentElement.setAttribute("data-dc-canvas", "");
+        canvasStyleEl = doc.createElement("style");
+        canvasStyleEl.setAttribute("data-dc-canvas", "");
+        applyCanvasBg();
+        doc.head.appendChild(canvasStyleEl);
+      } else {
+        doc.documentElement.removeAttribute("data-dc-canvas");
+        canvasStyleEl?.remove();
+        canvasStyleEl = null;
+      }
+    }
+    window.addEventListener("message", (e) => {
+      const type = e.data && e.data.type;
+      if (type === "__dc_theme") {
+        const t = e.data.theme;
+        if (t === "light" || t === "dark") {
+          appTheme = t;
+          applyCanvasBg();
+        }
+        return;
+      }
+      if (!designDocMode || type !== "__dc_probe") return;
+      postDesignMode(designDocMode);
+    });
+    function compile(node) {
+      const raw = [...node.children];
+      const helmetClosed = node.nextSibling != null || node.parentNode?.nextSibling != null;
+      if (node.hasAttribute("data-dc-atomics") && !mounted.has("__dc-atomics")) {
+        mounted.add("__dc-atomics");
+        const el = doc.createElement("style");
+        el.id = "__dc-atomics";
+        el.textContent = ATOMIC_CSS;
+        doc.head.appendChild(el);
+      }
+      return (_vals, ctx) => {
+        const name = ctx && ctx.__name || "";
+        const streaming = !!(name && isStreaming(name));
+        for (let i = 0; i < raw.length; i++) {
+          const child = raw[i];
+          const tag = child.tagName;
+          const mayBePartial = streaming && !helmetClosed && i === raw.length - 1;
+          if (tag === "SCRIPT") {
+            if (mayBePartial) continue;
+            const key = "SCRIPT|" + (child.getAttribute("src") || child.textContent || "");
+            if (mounted.has(key)) continue;
+            mounted.add(key);
+            const el = doc.createElement("script");
+            for (const { name: an, value } of [...child.attributes])
+              el.setAttribute(an, value);
+            if (child.textContent) el.textContent = child.textContent;
+            doc.head.appendChild(el);
+          } else if (tag === "LINK" || tag === "META") {
+            if (mayBePartial) continue;
+            const key = tag + "|" + (child.getAttribute("href") || child.getAttribute("src") || child.outerHTML);
+            if (mounted.has(key)) continue;
+            mounted.add(key);
+            if (tag === "LINK") {
+              const rel = (child.getAttribute("rel") || "").toLowerCase().split(/\s+/);
+              const href = (child.getAttribute("href") || "").trim();
+              const res = window.__resources;
+              const pre = res && rel.includes("stylesheet") && !rel.includes("alternate") ? res[href] : void 0;
+              const blob = typeof pre === "string" && pre ? bundledBlob(pre) : null;
+              if (blob) {
+                const el = doc.createElement("style");
+                if (child.hasAttribute("disabled")) {
+                  el.setAttribute("media", "not all");
+                } else if (child.getAttribute("media")) {
+                  el.setAttribute("media", child.getAttribute("media"));
+                }
+                if (child.getAttribute("title"))
+                  el.setAttribute("title", child.getAttribute("title"));
+                void blob.text().then((css) => {
+                  el.textContent = css;
+                });
+                doc.head.appendChild(el);
+                continue;
+              }
+            }
+            doc.head.appendChild(child.cloneNode(true));
+          } else {
+            const key = name + "|" + i;
+            let el = live.get(key);
+            if (!el || el.tagName !== tag) {
+              if (el) el.remove();
+              el = doc.createElement(tag.toLowerCase());
+              live.set(key, el);
+              doc.head.appendChild(el);
+            }
+            for (const { name: an, value } of [...child.attributes]) {
+              if (el.getAttribute(an) !== value) el.setAttribute(an, value);
+            }
+            if (el.textContent !== child.textContent)
+              el.textContent = child.textContent;
+          }
+        }
+        return null;
+      };
+    }
+    return { compile, setDesignDocMode };
+  }
+
+  // src/pseudo.ts
+  function scanUnquotedUrl(css, i) {
+    if (css[i] !== "u" && css[i] !== "U" || css.slice(i, i + 4).toLowerCase() !== "url(" || /[a-z0-9_-]/i.test(css[i - 1] ?? "")) {
+      return -1;
+    }
+    let j = i + 4;
+    while (j < css.length && /\s/.test(css[j])) j++;
+    if (css[j] === '"' || css[j] === "'") return -1;
+    while (j < css.length && css[j] !== ")") {
+      if (css[j] === "\\") j++;
+      j++;
+    }
+    return j < css.length ? j + 1 : css.length;
+  }
+  function stripComments(css) {
+    let out = "";
+    let quote = "";
+    for (let i = 0; i < css.length; i++) {
+      const c = css[i];
+      if (quote) {
+        if (c === "\\") {
+          out += c + (css[i + 1] ?? "");
+          i++;
+          continue;
+        }
+        if (c === quote) quote = "";
+        out += c;
+      } else if (c === "'" || c === '"') {
+        quote = c;
+        out += c;
+      } else if (c === "/" && css[i + 1] === "*") {
+        const end = css.indexOf("*/", i + 2);
+        i = end === -1 ? css.length : end + 1;
+        out += " ";
+      } else {
+        const end = scanUnquotedUrl(css, i);
+        if (end === -1) out += c;
+        else {
+          out += css.slice(i, end);
+          i = end - 1;
+        }
+      }
+    }
+    return out;
+  }
+  function importantify(css) {
+    css = stripComments(css);
+    const decls = [];
+    let start = 0;
+    let depth = 0;
+    let quote = "";
+    for (let i = 0; i < css.length; i++) {
+      const c = css[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = "";
+      } else if (c === "'" || c === '"') quote = c;
+      else if (c === "(") depth++;
+      else if (c === ")") depth = Math.max(0, depth - 1);
+      else if (c === ";" && depth === 0) {
+        decls.push(css.slice(start, i));
+        start = i + 1;
+      } else {
+        const end = scanUnquotedUrl(css, i);
+        if (end !== -1) i = end - 1;
+      }
+    }
+    decls.push(css.slice(start));
+    return decls.map((d) => d.trim()).filter(Boolean).map((d) => /!\s*important$/i.test(d) ? d : d + " !important").join(";");
+  }
+  function createPseudoSheet(doc) {
+    let el = null;
+    const cache = /* @__PURE__ */ new Map();
+    let n = 0;
+    return (pseudo, css) => {
+      const k = pseudo + "|" + css;
+      const hit = cache.get(k);
+      if (hit) return hit;
+      if (!el) {
+        el = doc.createElement("style");
+        doc.head.appendChild(el);
+      }
+      const cls = "scp" + (n++).toString(36);
+      const isPseudoElement = pseudo === "before" || pseudo === "after";
+      const sel = isPseudoElement ? "." + cls + "::" + pseudo : "." + cls + ":" + pseudo;
+      el.sheet.insertRule(
+        sel + "{" + (isPseudoElement ? css : importantify(css)) + "}",
+        el.sheet.cssRules.length
+      );
+      cache.set(k, cls);
+      return cls;
+    };
+  }
+
+  // src/registry.ts
+  function createRegistry() {
+    const entries = /* @__PURE__ */ Object.create(null);
+    function get(name) {
+      return entries[name] || (entries[name] = {
+        html: "",
+        tpl: null,
+        Logic: null,
+        jsStreaming: false,
+        htmlStreaming: false,
+        ver: 0,
+        subs: /* @__PURE__ */ new Set(),
+        fetched: false
+      });
+    }
+    function bump(name) {
+      const r = get(name);
+      r.ver++;
+      for (const fn of r.subs) fn();
+    }
+    return {
+      entries,
+      get,
+      bump,
+      bumpAll() {
+        for (const n in entries) bump(n);
+      }
+    };
+  }
+
+  // src/runtime.ts
+  var COMPONENT_DIR = ".";
+  function createRuntime(doc = document) {
+    const registry = createRegistry();
+    const pseudoClass = createPseudoSheet(doc);
+    const helmet = createHelmetManager(
+      doc,
+      (name) => registry.get(name).htmlStreaming
+    );
+    const external = createExternalModules(() => registry.bumpAll());
+    const factory = createComponentFactory(registry, ensureFetched);
+    const host = {
+      component: (name) => factory.getDC(name),
+      placeholder: (props) => h(Placeholder, props),
+      helmet: (node) => helmet.compile(node),
+      loadExternal: (kind, url, after) => external.load(kind, url, after),
+      resolveExternal: (url, name) => external.resolve(url, name),
+      resolveExternalGlobal: (url, name) => external.resolveGlobal(url, name),
+      resolveExternalError: (url, name) => external.getError(url, name),
+      pseudoClass
+    };
+    function ensureFetched(name) {
+      const r = registry.get(name);
+      if (r.fetched) return;
+      r.fetched = true;
+      const url = COMPONENT_DIR + "/" + encodeURIComponent(name) + ".dc.html";
+      const res = window.__resources;
+      const pre = res ? res[url] : void 0;
+      const target = typeof pre === "string" && pre ? pre : url;
+      const blob = bundledBlob(target);
+      (blob ? blob.text() : fetch(target).then((res2) => {
+        if (!res2.ok) {
+          console.error(
+            '[dc-runtime] sibling fetch for "' + name + '" failed:',
+            url,
+            "returned",
+            res2.status,
+            "\u2014 the reference renders as an empty placeholder."
+          );
+          return "";
+        }
+        return res2.text();
+      })).then((t) => {
+        if (!t) return;
+        const parsed = parseDcText(t);
+        if (!parsed) {
+          console.error(
+            '[dc-runtime] sibling fetch for "' + name + '":',
+            url,
+            "has no <x-dc> block \u2014 not a Design Component."
+          );
+          return;
+        }
+        if (parsed.props) r.propsMeta = parsed.props;
+        if (parsed.preview) r.preview = parsed.preview;
+        if (parsed.template && !r.html) updateHtml(name, parsed.template);
+        if (parsed.js && !r.Logic) updateJs(name, parsed.js);
+      }).catch(
+        (e) => console.error(
+          '[dc-runtime] sibling fetch for "' + name + '" threw:',
+          url,
+          e
+        )
+      );
+    }
+    let rootName = null;
+    function updateHtml(name, html) {
+      const r = registry.get(name);
+      r.html = html;
+      if (name === rootName) {
+        const mode = DESIGN_DOC_MODE_RE.exec(html)?.[1] ?? null;
+        if (mode || !r.htmlStreaming) helmet.setDesignDocMode(mode);
+      }
+      try {
+        r.tpl = compileTemplate(html, host);
+      } catch (e) {
+        console.error("[dc-runtime] template compile FAILED for", name, e);
+      }
+      registry.bump(name);
+    }
+    function updateJs(name, src) {
+      const r = registry.get(name);
+      const seq = r.jsSeq = (r.jsSeq || 0) + 1;
+      try {
+        const Cls = evalDcLogic(src);
+        if (r.jsSeq !== seq) return;
+        if (typeof Cls !== "function") {
+          r.logicError = name + ".dc.html: <script data-dc-script> must define `class Component extends DCLogic`";
+        } else {
+          r.logicError = null;
+          r.Logic = Cls;
+        }
+      } catch (e) {
+        if (r.jsSeq !== seq) return;
+        console.error(
+          "[dc-runtime] logic class eval FAILED for",
+          name,
+          "\u2014 the template renders with props only.",
+          e
+        );
+        r.logicError = name + ": " + (e instanceof Error && e.message ? e.message : String(e));
+      }
+      registry.bump(name);
+    }
+    function setStreaming(name, kind, on) {
+      const r = registry.get(name);
+      if (kind === "html") r.htmlStreaming = !!on;
+      else r.jsStreaming = !!on;
+      let any = false;
+      for (const n in registry.entries) {
+        const e = registry.entries[n];
+        if (e && (e.htmlStreaming || e.jsStreaming)) {
+          any = true;
+          break;
+        }
+      }
+      doc.documentElement.classList.toggle("sc-dc-streaming", any);
+      registry.bump(name);
+    }
+    function dcUpdate(name, kind, content, streaming) {
+      if (streaming) registry.get(name).fetched = true;
+      if (kind === "html") {
+        setStreaming(name, "html", !!streaming);
+        updateHtml(name, content);
+      } else if (kind === "js") {
+        setStreaming(name, "js", !!streaming);
+        if (!streaming) updateJs(name, content);
+      } else if (kind === "props") {
+        const { props, preview } = parseDataProps(content);
+        const r = registry.get(name);
+        r.propsMeta = props ?? void 0;
+        r.preview = preview;
+        registry.bump(name);
+      }
+    }
+    function setProps(name, overrides) {
+      registry.get(name).propOverrides = overrides && typeof overrides === "object" ? { ...overrides } : null;
+      registry.bump(name);
+    }
+    function adoptParsed(name, parsed) {
+      if (!parsed) return;
+      const r = registry.get(name);
+      if (parsed.props) r.propsMeta = parsed.props;
+      if (parsed.preview) r.preview = parsed.preview;
+      if (parsed.template) updateHtml(name, parsed.template);
+      if (parsed.js) updateJs(name, parsed.js);
+    }
+    return {
+      registry,
+      getDC: factory.getDC,
+      updateHtml,
+      updateJs,
+      dcUpdate,
+      setProps,
+      adoptParsed,
+      setRootName: (name) => {
+        rootName = name;
+      },
+      markFetched: (name) => {
+        registry.get(name).fetched = true;
+      },
+      annotatedTemplate: (name) => {
+        const r = registry.get(name);
+        return r.tpl && r.tpl.__annotated || null;
+      },
+      templateSource: (name) => registry.get(name).html || null,
+      StreamableLogic
+    };
+  }
+
+  // src/stream-state.ts
+  function createStreamTracker(staleMs = 6e4, now = Date.now) {
+    const since = /* @__PURE__ */ new Map();
+    const liveOne = (n) => {
+      const t = since.get(n);
+      if (t === void 0) return false;
+      if (now() - t > staleMs) {
+        since.delete(n);
+        return false;
+      }
+      return true;
+    };
+    return {
+      push(name, streaming, viewportKey) {
+        if (viewportKey === "dc-model") return;
+        if (streaming) since.set(name, now());
+        else since.delete(name);
+      },
+      live(name) {
+        if (name !== void 0) return liveOne(name);
+        for (const n of [...since.keys()]) if (liveOne(n)) return true;
+        return false;
+      }
+    };
+  }
+
+  // src/index.ts
+  function hideRawTemplate() {
+    const s = document.createElement("style");
+    s.textContent = "x-dc{display:none!important}";
+    document.head.appendChild(s);
+  }
+  function loadScript(src, integrity) {
+    return new Promise((resolve2, reject) => {
+      //! nosemgrep: create-script-element
+      const s = document.createElement("script");
+      s.src = src;
+      if (integrity) {
+        s.integrity = integrity;
+        s.crossOrigin = "anonymous";
+      }
+      s.async = false;
+      s.onload = () => resolve2();
+      s.onerror = () => reject(new Error(`failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+  function loadReactUmd() {
+    const w = window;
+    if (w.React && w.ReactDOM) return Promise.resolve();
+    const react = cdnScriptFor(REACT_URL, REACT_SRI);
+    const reactDom = cdnScriptFor(REACT_DOM_URL, REACT_DOM_SRI);
+    return Promise.all([
+      loadScript(react.src, react.integrity),
+      loadScript(reactDom.src, reactDom.integrity)
+    ]).then(() => void 0);
+  }
+  function init() {
+    const runtime = createRuntime(document);
+    let rootName = "Root";
+    const baseCss = document.createElement("style");
+    baseCss.textContent = BASE_CSS;
+    document.head.prepend(baseCss);
+    const notifyHost = () => {
+      if (window.parent === window) return;
+      const r = runtime.registry.entries[rootName];
+      try {
+        window.parent.postMessage(
+          {
+            type: "__dc_booted",
+            rootName,
+            propsMeta: r && r.propsMeta || null,
+            preview: r && r.preview || null
+          },
+          "*"
+        );
+      } catch {
+      }
+    };
+    const streams = createStreamTracker();
+    const api = {
+      __dcUpdate: (name, kind, content, streaming, viewportKey) => {
+        streams.push(name, streaming, viewportKey);
+        runtime.dcUpdate(name, kind, content, streaming);
+        if (name === rootName && !streaming && kind === "props") notifyHost();
+      },
+      __dcStreaming: (name) => streams.live(name),
+      __dcSetProps: (name, overrides) => runtime.setProps(name, overrides),
+      /** Name of the component currently mounted as the page root — DC tools
+       *  push their template-stream here when targeting "the open page". */
+      __dcRootName: () => rootName,
+      /** Editor bridge — the encoded, `data-dc-tpl`-annotated template source.
+       *  The host editor parses this into its own template DOM so it can map a
+       *  rendered node (carrying the same `data-dc-tpl`) back to the source
+       *  node that emitted it. Returns the encoded form (`sc-camel-*` attrs,
+       *  `<sc-raw-*>`/`<sc-helmet>` tags); the editor decodes on serialize. */
+      __dcAnnotatedTemplate: (name) => runtime.annotatedTemplate(name),
+      /** Editor bridge — the *original* (decoded) template source. */
+      __dcTemplateSource: (name) => runtime.templateSource(name),
+      __dcBoot: () => {
+        rootName = boot(runtime, document) ?? rootName;
+        notifyHost();
+      },
+      __dcRegistry: runtime.registry.entries,
+      getDC: (name) => runtime.getDC(name),
+      // `DCLogic` is the documented base class name; `StreamableLogic` is the
+      // implementation alias kept for any project that already references it.
+      DCLogic: runtime.StreamableLogic,
+      StreamableLogic: runtime.StreamableLogic
+    };
+    Object.assign(window, api);
+    window.__dcContentKeyed = true;
+    if (document.readyState !== "loading") api.__dcBoot();
+    else document.addEventListener("DOMContentLoaded", () => api.__dcBoot());
+  }
+  hideRawTemplate();
+  loadReactUmd().then(init).catch((err) => {
+    console.error("[dc] failed to load React or boot:", err);
+    throw err;
+  });
+})();
+
+</script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&amp;family=Roboto+Mono:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#0B0B0D; }
+  a { color:#FF5A36; text-decoration:none; }
+  a:hover { color:#FF8B6B; }
+  @keyframes pulseRing { 0%{ transform:scale(0.85); opacity:.55 } 70%{ transform:scale(1.35); opacity:0 } 100%{ transform:scale(1.35); opacity:0 } }
+  @keyframes floatY { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-4px) } }
+  @keyframes sweepX { 0%{ transform:translateX(-120%) } 100%{ transform:translateX(320%) } }
+  @keyframes blink { 0%,100%{ opacity:1 } 50%{ opacity:.25 } }
+  @keyframes spinSlow { 0%{ transform:rotate(0deg) } 100%{ transform:rotate(360deg) } }
+  @keyframes riseIn { 0%{ opacity:0; transform:translateY(10px) } 100%{ opacity:1; transform:translateY(0) } }
+</style>
+</helmet>
+
+<div style="position:relative; width:100vw; height:100vh; overflow:hidden; background:{{ shellBg }};">
+<div style="position:absolute; left:50%; top:50%; width:1600px; height:980px; transform:translate(-50%, -50%) scale({{ fitScale }}); transform-origin:center center; display:flex; flex-direction:column; gap:14px; padding:16px 20px 14px; box-sizing:border-box; background:{{ pageBg }}; color:{{ textMain }}; font-family:Sora, sans-serif; overflow:hidden;">
+
+  <header style="display:flex; align-items:center; justify-content:space-between; gap:24px; flex:0 0 auto;">
+    <div style="display:flex; align-items:center; gap:14px; flex:1 1 auto; min-width:0; overflow:hidden;">
+      <div style="position:relative; flex:0 0 auto; width:64px; height:46px; display:grid; place-items:center;">
+        <div style="position:absolute; width:46px; height:46px; border-radius:50%; background:radial-gradient(circle, rgba(94,158,230,.28), rgba(94,158,230,0) 70%); animation:pulseRing 3.2s ease-out infinite;"></div>
+        <img src="uploads/Logo for FYDP.png" alt="Project logo" style="position:relative; width:64px; height:46px; object-fit:contain; animation:floatY 5s ease-in-out infinite; filter:drop-shadow(0 4px 12px rgba(0,0,0,.6));">
+      </div>
+      <div style="display:flex; flex-direction:column; gap:3px;">
+        <div style="font-size:15px; font-weight:600; letter-spacing:.14em;">RDK&nbsp;X5 · ROVER GROUND STATION</div>
+        <div style="font-family:'Roboto Mono', monospace; font-size:11px; letter-spacing:.1em; color:{{ textDim }};">SEARCH &amp; RESCUE PAYLOAD · BUILD 2.4.1</div>
+      </div>
+    </div>
+
+    <nav style="position:relative; flex:1 1 auto; max-width:760px; min-width:420px; display:flex; align-items:center; padding:6px; border-radius:999px; background:linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,.045)); border:1px solid rgba(255,255,255,.16); box-shadow:inset 0 1px 0 rgba(255,255,255,.35), inset 0 -1px 2px rgba(0,0,0,.4), 0 18px 40px rgba(0,0,0,.55); backdrop-filter:blur(26px) saturate(190%); -webkit-backdrop-filter:blur(26px) saturate(190%);">
+      <div style="position:absolute; top:6px; left:6px; width:calc((100% - 12px) / 7); height:38px; border-radius:999px; transform:translateX({{ lensX }}); transition:transform .55s cubic-bezier(.34,1.56,.64,1); background:linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.10)); border:1px solid rgba(255,255,255,.42); box-shadow:inset 0 1px 1px rgba(255,255,255,.75), inset 0 -6px 12px rgba(255,255,255,.10), 0 6px 18px rgba(0,0,0,.45); backdrop-filter:blur(10px) saturate(240%) brightness(1.25); -webkit-backdrop-filter:blur(10px) saturate(240%) brightness(1.25); pointer-events:none;"></div>
+      <div style="position:absolute; top:7px; left:6px; width:calc((100% - 12px) / 7); height:14px; border-radius:999px 999px 40px 40px; transform:translateX({{ lensX }}); transition:transform .55s cubic-bezier(.34,1.56,.64,1); background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0)); pointer-events:none; opacity:.7;"></div>
+      <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="5">
+        <button onClick="{{ item.go }}" style="position:relative; z-index:2; flex:1 1 0; min-width:0; padding:0 10px; height:38px; border:0; background:transparent; cursor:pointer; color:{{ item.color }}; font-family:Sora, sans-serif; font-size:11.5px; font-weight:600; letter-spacing:.16em; transition:color .3s ease; display:flex; align-items:center; justify-content:center; gap:7px;" style-hover="color:#FFFFFF">
+          <span style="width:5px; height:5px; border-radius:50%; background:{{ item.dot }}; box-shadow:0 0 10px {{ item.dot }}; transition:background .3s ease;"></span>
+          <span>{{ item.label }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="display:flex; align-items:center; gap:8px; flex:1 1 auto; min-width:0; overflow:hidden; justify-content:flex-end;">
+      <button onClick="{{ toggleTheme }}" title="Toggle light mode" style="display:flex; align-items:center; gap:8px; padding:7px 13px; border-radius:999px; cursor:pointer; background:{{ tileBg }}; border:1px solid {{ tileBorder }}; color:{{ textDim }}; font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.12em; transition:all .3s ease; backdrop-filter:blur(18px) saturate(180%); -webkit-backdrop-filter:blur(18px) saturate(180%); box-shadow:inset 0 1px 0 rgba(255,255,255,.28);" style-hover="border-color:#FF5A36">
+        <span style="width:14px; height:14px; border-radius:50%; background:{{ themeDotBg }}; box-shadow:{{ themeDotShadow }}; transition:all .35s ease;"></span>
+        <span>{{ themeLabel }}</span>
+      </button>
+      <sc-for list="{{ chips }}" as="chip" hint-placeholder-count="3">
+        <div style="display:flex; align-items:center; gap:7px; padding:7px 12px; border-radius:10px; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.09); font-family:'Roboto Mono', monospace; font-size:11px; letter-spacing:.06em;">
+          <span style="width:6px; height:6px; border-radius:50%; background:{{ chip.color }}; box-shadow:0 0 8px {{ chip.color }};"></span>
+          <span style="color:{{ textDim }};">{{ chip.label }}</span>
+          <span style="color:{{ chipValueColor }};">{{ chip.value }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </header>
+
+  <main style="flex:1 1 auto; min-height:0; display:grid; gap:14px; grid-template-columns:{{ gridCols }}; grid-template-rows:{{ gridRows }}; grid-template-areas:{{ gridAreas }}; transition:all .4s ease;">
+
+    <section style="grid-area:vision; display:{{ visionShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:16px 16px 14px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">VISION</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">IMX219 NoIR · UVC LWIR 256×192</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; color:{{ accent }};">{{ detectionCount }} TRACKS</span>
+      </div>
+      <div style="flex:1 1 auto; min-height:0; display:grid; grid-template-columns:{{ visionCols }}; gap:12px;">
+        <div style="position:relative; min-height:0; border-radius:14px; overflow:hidden; background:#08080A; border:1px solid rgba(255,255,255,.08);">
+          <img src="/rgb_feed" alt="RGB camera feed" style="width:100%; height:100%; object-fit:cover; display:block; background:#000;" onerror="this.style.opacity=.10"><canvas class="detOverlay" data-feed="RGB" style="position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:4;"></canvas>
+          <div style="position:absolute; top:10px; left:12px; display:flex; align-items:center; gap:8px; font-family:'Roboto Mono', monospace; font-size:10px; letter-spacing:.1em; color:rgba(255,255,255,.8);">
+            <span style="width:6px; height:6px; border-radius:50%; background:#FF5A36; animation:blink 1.6s ease-in-out infinite;"></span>
+            <span>RGB · /dev/video8</span>
+          </div>
+          <div style="position:absolute; bottom:10px; left:12px; right:12px; display:flex; justify-content:space-between; font-family:'Roboto Mono', monospace; font-size:10px; color:rgba(255,255,255,.55);">
+            <span>NV12 1280×720</span>
+            <span>{{ rgbFps }} fps</span>
+          </div>
+          <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 100%); width:26%; animation:sweepX 7s linear infinite;"></div>
+        </div>
+        <div style="position:relative; min-height:0; border-radius:14px; overflow:hidden; background:#08080A; border:1px solid rgba(255,255,255,.08);">
+          <img src="/thermal_feed" alt="Thermal camera feed" style="width:100%; height:100%; object-fit:cover; display:block; background:#000; image-rendering:crisp-edges;" onerror="this.style.opacity=.10"><canvas class="detOverlay" data-feed="Thermal" style="position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:4;"></canvas>
+          <div style="position:absolute; top:10px; left:12px; display:flex; align-items:center; gap:8px; font-family:'Roboto Mono', monospace; font-size:10px; letter-spacing:.1em; color:rgba(255,255,255,.8);">
+            <span style="width:6px; height:6px; border-radius:50%; background:#C6F24E; animation:blink 1.6s ease-in-out infinite;"></span>
+            <span>THERMAL · /dev/video32</span>
+          </div>
+          <div style="position:absolute; bottom:10px; left:12px; right:12px; display:flex; justify-content:space-between; font-family:'Roboto Mono', monospace; font-size:10px; color:rgba(255,255,255,.6);">
+            <span>YUYV 256×192</span>
+            <span>PEAK {{ peakTemp }}°C</span>
+          </div>
+          <div style="position:absolute; top:10px; right:12px; width:10px; bottom:34px; border-radius:4px; background:linear-gradient(180deg,#FFFFFF,#BFBFBF,#7A7A7A,#3A3A3A,#000000); border:1px solid rgba(255,255,255,.2);"></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="grid-area:imurow; display:{{ pilotShow }}; align-items:center; gap:26px; min-height:0; overflow:hidden; border-radius:16px; padding:0 20px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);">
+      <div style="display:flex; align-items:baseline; gap:10px; flex:0 0 auto;">
+        <span style="font-size:11px; font-weight:600; letter-spacing:.2em;">IMU</span>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10px; color:{{ textDim }};">/imu/data</span>
+      </div>
+      <div style="flex:1 1 auto; display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+        <sc-for list="{{ attitude }}" as="a" hint-placeholder-count="3">
+          <div style="display:flex; align-items:baseline; justify-content:center; gap:12px; padding:6px 14px; border-radius:11px; background:{{ tileBg }}; border:1px solid {{ tileBorder }};">
+            <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.16em; color:{{ textDim }};">{{ a.label }}</span>
+            <span style="font-family:'Roboto Mono', monospace; font-size:18px; color:{{ a.color }};">{{ a.value }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <span style="flex:0 0 auto; font-family:'Roboto Mono', monospace; font-size:10px; letter-spacing:.1em; color:{{ tiltColor }};">{{ tiltLabel }}</span>
+    </section>
+
+    <section style="grid-area:pilot; display:{{ pilotShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:14px 16px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">PILOT</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">/cmd_vel · 20 Hz</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.1em; color:{{ driveColor }};">{{ driveState }}</span>
+      </div>
+
+      <div style="flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:space-between; gap:14px;">
+        <div onPointerDown="{{ stickDownL }}" style="position:relative; flex:0 0 auto; width:196px; height:196px; border-radius:50%; touch-action:none; cursor:grab; background:radial-gradient(circle at 50% 30%, rgba(255,255,255,.13), rgba(255,255,255,.03) 60%, rgba(255,255,255,.015)); border:1px solid rgba(255,255,255,.16); box-shadow:inset 0 2px 2px rgba(255,255,255,.28), inset 0 -10px 22px rgba(0,0,0,.45), 0 14px 34px rgba(0,0,0,.5); backdrop-filter:blur(18px) saturate(180%); -webkit-backdrop-filter:blur(18px) saturate(180%);">
+          <div style="position:absolute; inset:26px; border-radius:50%; border:1px dashed rgba(255,255,255,.10);"></div>
+          <div style="position:absolute; left:50%; top:12px; transform:translateX(-50%); font-family:'Roboto Mono', monospace; font-size:9px; letter-spacing:.14em; color:{{ textDim }};">FWD</div>
+          <div style="position:absolute; left:50%; bottom:12px; transform:translateX(-50%); font-family:'Roboto Mono', monospace; font-size:9px; letter-spacing:.14em; color:{{ textDim }};">REV</div>
+          <div style="position:absolute; left:50%; top:50%; width:74px; height:74px; border-radius:50%; transform:translate(calc(-50% + {{ knobLX }}), calc(-50% + {{ knobLY }})); transition:transform .12s ease-out; background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.12)); border:1px solid rgba(255,255,255,.5); box-shadow:inset 0 2px 2px rgba(255,255,255,.8), 0 10px 22px rgba(0,0,0,.5); backdrop-filter:blur(8px) saturate(230%) brightness(1.2); -webkit-backdrop-filter:blur(8px) saturate(230%) brightness(1.2);"></div>
+        </div>
+
+        <div style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px; align-items:center;">
+          <div style="position: relative; width: 268px; padding: 12px 14px 10px; border-radius: 16px; background:{{ speedoBg }}; border:1px solid {{ speedoBorder }}; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); top: -37px">
+            <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:9px;">
+              <div style="display:flex; align-items:baseline; gap:6px;">
+                <span style="font-family: 'Roboto Mono', monospace; font-size: 38px; font-weight: 500; line-height: .9; letter-spacing: -.02em; color: {{ speedColor }}; text-shadow: 0 0 22px {{ speedGlow }}">{{ speedText }}</span>
+                <span style="font-family:'Roboto Mono', monospace; font-size:10px; color:{{ textDim }};">m/s</span>
+              </div>
+              <span style="font-family:'Roboto Mono', monospace; font-size:9px; letter-spacing:.16em; color:{{ speedColor }};">{{ speedSub }}</span>
+            </div>
+            <div style="position:relative; height:34px;">
+              <canvas ref="{{ speedoRef }}" style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <sc-for list="{{ modes }}" as="m" hint-placeholder-count="3">
+              <button onClick="{{ m.go }}" style="padding:9px 16px; border-radius:999px; border:1px solid {{ m.border }}; background:{{ m.bg }}; color:{{ m.color }}; font-family:Sora, sans-serif; font-size:10.5px; font-weight:600; letter-spacing:.14em; cursor:pointer; transition:all .25s ease;" style-hover="border-color:rgba(255,255,255,.4)">{{ m.label }}</button>
+            </sc-for>
+          </div>
+          <div style="width:100%; max-width:260px; display:flex; flex-direction:column; gap:7px;">
+            <sc-for list="{{ cmdRows }}" as="c" hint-placeholder-count="2">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.1em; width:74px; color:{{ textDim }};">{{ c.label }}</span>
+                <div style="flex:1 1 auto; height:5px; border-radius:3px; background:{{ trackColor }}; position:relative;">
+                  <div style="position:absolute; top:0; bottom:0; left:{{ c.left }}; width:{{ c.width }}; background:{{ c.color }}; border-radius:3px; transition:all .12s linear;"></div>
+                </div>
+                <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; width:52px; text-align:right;">{{ c.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <button onClick="{{ toggleStop }}" style="margin-top:2px; padding:13px 30px; border-radius:16px; border:1px solid {{ stopBorder }}; background:{{ stopBg }}; color:{{ stopColor }}; font-family:Sora, sans-serif; font-size:12px; font-weight:700; letter-spacing:.2em; cursor:pointer; transition:all .25s ease; box-shadow:inset 0 1px 0 rgba(255,255,255,.3), 0 12px 26px rgba(0,0,0,.45); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);">{{ stopLabel }}</button>
+        </div>
+
+        <div onPointerDown="{{ stickDownR }}" style="position:relative; flex:0 0 auto; width:196px; height:196px; border-radius:50%; touch-action:none; cursor:grab; background:radial-gradient(circle at 50% 30%, rgba(255,255,255,.13), rgba(255,255,255,.03) 60%, rgba(255,255,255,.015)); border:1px solid rgba(255,255,255,.16); box-shadow:inset 0 2px 2px rgba(255,255,255,.28), inset 0 -10px 22px rgba(0,0,0,.45), 0 14px 34px rgba(0,0,0,.5); backdrop-filter:blur(18px) saturate(180%); -webkit-backdrop-filter:blur(18px) saturate(180%);">
+          <div style="position:absolute; inset:26px; border-radius:50%; border:1px dashed rgba(255,255,255,.10);"></div>
+          <div style="position:absolute; left:14px; top:50%; transform:translateY(-50%); font-family:'Roboto Mono', monospace; font-size:9px; letter-spacing:.14em; color:{{ textDim }};">CCW</div>
+          <div style="position:absolute; right:14px; top:50%; transform:translateY(-50%); font-family:'Roboto Mono', monospace; font-size:9px; letter-spacing:.14em; color:{{ textDim }};">CW</div>
+          <div style="position:absolute; left:50%; top:50%; width:74px; height:74px; border-radius:50%; transform:translate(calc(-50% + {{ knobRX }}), calc(-50% + {{ knobRY }})); transition:transform .12s ease-out; background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.12)); border:1px solid rgba(255,255,255,.5); box-shadow:inset 0 2px 2px rgba(255,255,255,.8), 0 10px 22px rgba(0,0,0,.5); backdrop-filter:blur(8px) saturate(230%) brightness(1.2); -webkit-backdrop-filter:blur(8px) saturate(230%) brightness(1.2);"></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="grid-area:cloud; display:{{ cloudShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:16px 16px 14px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">POINT CLOUD</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">/rviz · sensor_msgs/PointCloud2</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; color:rgba(232,232,234,.5);">DRAG TO ORBIT</span>
+      </div>
+      <div style="position:relative; flex:1 1 auto; min-height:0; border-radius:14px; overflow:hidden; background:radial-gradient(600px 400px at 50% 60%, #101218 0%, #08080A 70%); border:1px solid rgba(255,255,255,.08);">
+        <canvas ref="{{ cloudRef }}" style="width:100%; height:100%; display:block; cursor:grab;"></canvas>
+        <div style="position:absolute; left:12px; bottom:10px; display:flex; gap:16px; font-family:'Roboto Mono', monospace; font-size:10px; color:rgba(232,232,234,.55);">
+          <span>{{ pointCount }} PTS</span>
+          <span>RANGE {{ cloudRange }} m</span>
+          <span>FRAME base_link</span>
+        </div>
+      </div>
+    </section>
+
+    <section style="grid-area:atmo; display:{{ atmoShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:16px; background:{{ panelBg }}; border:1px solid {{ atmoBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">ATMOSPHERE</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">ENS160 · AHT21 · MEMS CO · MEMS CH4</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.1em; color:{{ atmoStatusColor }};">{{ atmoStatus }}</span>
+      </div>
+      <div style="flex:1 1 auto; min-height:0; display:grid; grid-template-columns:repeat(4, 1fr); gap:12px;">
+        <sc-for list="{{ gauges }}" as="g" hint-placeholder-count="4">
+          <div style="position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:10px 8px; min-height:0; overflow:hidden; border-radius:16px; background:rgba(255,255,255,.035); border:1px solid {{ g.border }}; overflow:hidden;">
+            <div style="position:absolute; inset:0; background:radial-gradient(120px 80px at 50% 120%, {{ g.glow }} 0%, rgba(0,0,0,0) 70%); pointer-events:none;"></div>
+            <div style="font-family:'Roboto Mono', monospace; font-size:10px; letter-spacing:.14em; color:rgba(232,232,234,.5);">{{ g.label }}</div>
+            <div style="position:relative; flex:1 1 auto; width:100%; min-height:64px;">
+              <svg viewBox="0 0 120 120" preserveAspectRatio="xMidYMid meet" style="width:100%; height:100%; display:block; transform:rotate(135deg);">
+                <circle cx="60" cy="60" r="44" fill="none" stroke="{{ trackColor }}" stroke-width="9" stroke-linecap="round" stroke-dasharray="207.3 400"></circle>
+                <circle cx="60" cy="60" r="44" fill="none" stroke="{{ g.color }}" stroke-width="9" stroke-linecap="round" stroke-dasharray="{{ g.dash }}" style="transition:stroke-dasharray .45s ease, stroke .45s ease; filter:drop-shadow(0 0 6px {{ g.glow }});"></circle>
+              </svg>
+              <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
+                <div style="font-family:'Roboto Mono', monospace; font-size:20px; font-weight:500; color:{{ g.color }}; line-height:1;">{{ g.value }}</div>
+                <div style="font-family:'Roboto Mono', monospace; font-size:10px; color:{{ textDim }};">{{ g.unit }}</div>
+              </div>
+            </div>
+            <div style="flex:0 0 auto; white-space:nowrap; font-family:'Roboto Mono', monospace; font-size:10px; color:{{ textDim }};">{{ g.sub }}</div>
+            <div style="padding:3px 9px; border-radius:999px; font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.12em; color:{{ g.color }}; background:{{ g.glow }};">{{ g.state }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section style="grid-area:imu; display:{{ imuShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:16px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">ATTITUDE &amp; IMU</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">/imu/data · 100 Hz</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; color:{{ tiltColor }};">{{ tiltLabel }}</span>
+      </div>
+      <div style="flex:1 1 auto; min-height:0; display:grid; grid-template-columns:1.25fr 1fr; gap:14px;">
+        <div style="position:relative; min-height:0; border-radius:14px; overflow:hidden; background:radial-gradient(400px 300px at 50% 50%, #101218 0%, #08080A 75%); border:1px solid rgba(255,255,255,.08);">
+          <canvas ref="{{ imuRef }}" style="width:100%; height:100%; display:block;"></canvas>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; min-height:0; overflow:hidden;">
+          <div style="flex:0 0 auto; display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+            <sc-for list="{{ attitude }}" as="a" hint-placeholder-count="3">
+              <div style="padding:7px 8px; border-radius:12px; background:{{ tileBg }}; border:1px solid {{ tileBorder }}; display:flex; flex-direction:column; gap:4px; align-items:center;">
+                <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.14em; color:{{ textDim }};">{{ a.label }}</span>
+                <span style="font-family:'Roboto Mono', monospace; font-size:16px; color:{{ a.color }};">{{ a.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1 1 0; min-height:34px; border-radius:12px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.07); padding:8px 10px; display:flex; flex-direction:column; gap:5px; overflow:hidden;">
+            <div style="display:flex; justify-content:space-between; font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.12em; color:{{ textDim }};">
+              <span>ANGULAR VELOCITY rad/s</span>
+              <span style="color:#FF5A36;">X</span>
+            </div>
+            <div style="flex:1 1 auto; min-height:0;"><canvas ref="{{ gyroRef }}" style="width:100%; height:100%; display:block;"></canvas></div>
+          </div>
+          <div style="flex:0 0 auto; display:flex; flex-direction:column; gap:5px;">
+            <sc-for list="{{ accels }}" as="ac" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-family:'Roboto Mono', monospace; font-size:10px; width:24px; color:{{ textDim }};">{{ ac.label }}</span>
+                <div style="flex:1 1 auto; height:5px; border-radius:3px; background:{{ trackColor }}; overflow:hidden; position:relative;">
+                  <div style="position:absolute; top:0; bottom:0; left:{{ ac.left }}; width:{{ ac.width }}; background:{{ ac.color }}; border-radius:3px; transition:all .2s linear;"></div>
+                </div>
+                <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; width:52px; text-align:right; color:{{ chipValueColor }};">{{ ac.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section style="grid-area:perf; display:{{ perfShow }}; flex-direction:column; min-height:0; border-radius:20px; padding:16px; background:{{ panelBg }}; border:1px solid {{ panelBorder }}; box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 22px 50px rgba(0,0,0,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); animation:riseIn .5s ease both;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <span style="font-size:12px; font-weight:600; letter-spacing:.2em;">PERFORMANCE</span>
+          <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.08em; color:{{ textDim }};">RDK X5 · 8× A55 · BPU BAYES-E · hrut_somstatus 1 Hz</span>
+        </div>
+        <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.1em; color:{{ thermColor }};">{{ thermLabel }}</span>
+      </div>
+
+      <div style="flex:1 1 auto; min-height:0;">
+        <div style="height:100%; min-height:0; display:grid; grid-template-columns:1.25fr 1.5fr 0.9fr; gap:14px;">
+
+          <div style="min-height:0; display:grid; grid-template-columns:repeat(2, 1fr); grid-template-rows:repeat(4, 1fr); gap:10px;">
+            <sc-for list="{{ cores }}" as="c" hint-placeholder-count="8">
+          <div style="position:relative; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:8px 6px; border-radius:16px; background:{{ tileBg }}; border:1px solid {{ tileBorder }};">
+            <div style="position:relative; flex:1 1 auto; width:100%; min-height:52px;">
+              <svg viewBox="0 0 120 120" preserveAspectRatio="xMidYMid meet" style="width:100%; height:100%; display:block; transform:rotate(135deg);">
+                <circle cx="60" cy="60" r="46" fill="none" stroke="{{ trackColor }}" stroke-width="7" stroke-linecap="round" stroke-dasharray="216.8 400"></circle>
+                <circle cx="60" cy="60" r="46" fill="none" stroke="{{ c.color }}" stroke-width="7" stroke-linecap="round" stroke-dasharray="{{ c.dash }}" style="transition:stroke-dasharray .35s ease, stroke .35s ease; filter:drop-shadow(0 0 5px {{ c.glow }});"></circle>
+              </svg>
+              <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;">
+                <div style="font-family:'Roboto Mono', monospace; font-size:15px; font-weight:500; line-height:1; color:{{ chipValueColor }};">{{ c.clock }}</div>
+                <div style="font-family:'Roboto Mono', monospace; font-size:8.5px; letter-spacing:.1em; color:{{ textDim }};">MHz</div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-family:'Roboto Mono', monospace; font-size:8.5px; letter-spacing:.14em; color:{{ textDim }};">{{ c.label }}</span>
+              <span style="font-family:'Roboto Mono', monospace; font-size:8.5px; color:{{ c.color }};">{{ c.load }}%</span>
+            </div>
+          </div>
+            </sc-for>
+          </div>
+
+          <div style="position:relative; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:26px; background:{{ tileBg }}; border:1px solid {{ tileBorder }}; overflow:hidden;">
+            
+
+            <div style="position:relative; width:78%; aspect-ratio:1 / 1; max-height:76%;">
+              <svg viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet" style="width:100%; height:100%; display:block; transform:rotate(135deg);">
+                <circle cx="120" cy="120" r="98" fill="none" stroke="{{ trackColor }}" stroke-width="16" stroke-linecap="round" stroke-dasharray="461.8 900"></circle>
+                <circle cx="120" cy="120" r="98" fill="none" stroke="{{ bpuColor }}" stroke-width="16" stroke-linecap="round" stroke-dasharray="{{ bpuDash }}" style="transition:stroke-dasharray .45s ease, stroke .45s ease; filter:drop-shadow(0 0 10px {{ bpuGlow }});"></circle>
+              </svg>
+              <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;">
+                <div style="font-family:'Roboto Mono', monospace; font-size:44px; font-weight:500; line-height:1; color:{{ bpuColor }};">{{ bpuClock }}</div>
+                <div style="font-family:'Roboto Mono', monospace; font-size:12px; letter-spacing:.1em; color:{{ textDim }};">MHz</div>
+                <div style="margin-top:6px; font-family:'Roboto Mono', monospace; font-size:10px; letter-spacing:.2em; color:{{ textDim }};">BPU CLOCK</div>
+              </div>
+            </div>
+            <div style="position:relative; display:flex; align-items:center; gap:20px; margin-top:6px; padding:7px 16px; border-radius:999px; background:{{ tileBg }}; border:1px solid {{ tileBorder }};">
+              <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.12em; color:{{ textDim }};">LOAD <span style="color:{{ bpuColor }};">{{ bpuLoad }}%</span></span>
+              <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.12em; color:{{ textDim }};">FPS <span style="color:{{ chipValueColor }};">{{ bpuFps }}</span></span>
+              <span style="font-family:'Roboto Mono', monospace; font-size:10.5px; letter-spacing:.12em; color:{{ bpuStateColor }};">{{ bpuState }}</span>
+            </div>
+          </div>
+
+          <div style="min-height:0; display:grid; grid-template-rows:repeat(3, 1fr); gap:12px;">
+            <sc-for list="{{ temps }}" as="t" hint-placeholder-count="3">
+              <div style="position:relative; min-height:0; overflow:hidden; display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:18px; background:{{ tileBg }}; border:1px solid {{ t.border }};">
+                
+                <div style="position:relative; flex:0 0 auto; width:14px; height:76%; border-radius:999px; background:{{ trackColor }}; overflow:hidden;">
+                  <div style="position:absolute; left:0; right:0; bottom:0; height:{{ t.height }}; border-radius:999px; background:{{ t.color }}; transition:height .5s ease, background .4s ease;"></div>
+                </div>
+                <div style="position:relative; flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px;">
+                  <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.16em; color:{{ textDim }};">{{ t.label }}</span>
+                  <div style="display:flex; align-items:baseline; gap:5px;">
+                    <span style="font-family:'Roboto Mono', monospace; font-size:28px; font-weight:500; line-height:1; color:{{ t.color }};">{{ t.value }}</span>
+                    <span style="font-family:'Roboto Mono', monospace; font-size:11px; color:{{ textDim }};">°C</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; letter-spacing:.12em; color:{{ t.color }};">{{ t.state }}</span>
+                    <span style="font-family:'Roboto Mono', monospace; font-size:9.5px; color:{{ textDim }};">{{ t.sub }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer style="flex:0 0 auto; display:{{ footerShow }}; align-items:center; gap:18px; padding:9px 14px; border-radius:14px; background:{{ tileBg }}; border:1px solid {{ tileBorder }}; font-family:'Roboto Mono', monospace; font-size:10.5px; color:{{ textDim }}; overflow:hidden;">
+    <span style="color:{{ accent }}; letter-spacing:.12em; flex:0 0 auto;">TELEMETRY</span>
+    <div style="display:flex; gap:26px; flex:1 1 auto; overflow:hidden;">
+      <sc-for list="{{ logLines }}" as="l" hint-placeholder-count="4">
+        <span style="white-space:nowrap; color:{{ l.color }};">{{ l.text }}</span>
+      </sc-for>
+    </div>
+    <span style="flex:0 0 auto; color:{{ textDim }};">T+{{ clock }}</span>
+  </footer>
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:980},&quot;gasAlarm&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Simulation&quot;},&quot;showDetections&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Simulation&quot;}}">
+class Component extends DCLogic {
+  rgbRef = React.createRef();
+  thermRef = React.createRef();
+  cloudRef = React.createRef();
+  imuRef = React.createRef();
+  gyroRef = React.createRef();
+  speedoRef = React.createRef();
+
+  state = {
+    view: 'OVERVIEW', tick: 0, t0: Date.now(),
+    co: 3.2, ch4: 340, eco2: 512, tvoc: 38, temp: 24.6, hum: 41, aqi: 2,
+    roll: 0, pitch: 0, yaw: 0, ax: 0.1, ay: -0.2, az: 9.79, scale: 1,
+    rgbFps: '24.8', peak: '31.4', detections: 2, logIdx: 0,
+    lx: 0, ly: 0, rx: 0, ry: 0, mode: 'CRUISE', estop: false, light: false
+  };
+
+  views = ['OVERVIEW', 'PILOT', 'VISION', 'CLOUD', 'ATMO', 'IMU', 'PERF'];
+
+  stickDownL = (e) => this.stickStart('L', e);
+  stickDownR = (e) => this.stickStart('R', e);
+  stickStart = (which, e) => {
+    this.stickDrag = { which, r: e.currentTarget.getBoundingClientRect() };
+    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} }
+    this.stickMove(e);
+  };
+  stickMove = (e) => {
+    const d = this.stickDrag; if (!d) return;
+    const cx = d.r.left + d.r.width / 2, cy = d.r.top + d.r.height / 2;
+    let x = (e.clientX - cx) / (d.r.width / 2), y = (e.clientY - cy) / (d.r.height / 2);
+    const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+    this.setState(d.which === 'L' ? { lx: x, ly: y } : { rx: x, ry: y });
+  };
+  stickUp = () => {
+    const d = this.stickDrag; if (!d) return;
+    this.stickDrag = null;
+    this.setState(d.which === 'L' ? { lx: 0, ly: 0 } : { rx: 0, ry: 0 });
+  };
+  accent = '#FF5A36';
+  lime = '#C6F24E';
+
+  componentDidMount() {
+    this.buildCloud();
+    this.gyroHist = [[], [], []];
+    this.orbit = { yaw: 0.6, pitch: 0.42, drag: null };
+    this.blobs = [
+      { x: 0.34, y: 0.58, r: 0.13, ph: 0.0, sp: 0.19 },
+      { x: 0.68, y: 0.44, r: 0.09, ph: 2.1, sp: 0.13 }
+    ];
+    this.logPool = [
+      ['imu: ekf converged, covariance 0.014', 'rgb'],
+      ['vs-video: /dev/video8 streaming NV12 1280x720', 'dim'],
+      ['uvc: /dev/video32 negotiated 25 fps', 'dim'],
+      ['ens160: warm-up complete, aqi index valid', 'lime'],
+      ['pointcloud2: 4812 pts @ 9.6 Hz', 'dim'],
+      ['co sensor: baseline drift corrected', 'dim'],
+      ['detector: person 0.87 conf, bearing 12°', 'accent'],
+      ['thermal: hotspot 34.2°C at frame centre', 'accent']
+    ];
+    const c = this.cloudRef.current;
+    if (c) {
+      c.addEventListener('pointerdown', this.onDown);
+      window.addEventListener('pointermove', this.onMove);
+      window.addEventListener('pointerup', this.onUp);
+      window.addEventListener('pointermove', this.stickMove);
+      window.addEventListener('pointerup', this.stickUp);
+    }
+    this.onResize();
+    window.addEventListener('resize', this.onResize);
+    this.raf = requestAnimationFrame(this.loop);
+    this.timer = setInterval(() => this.sample(), 220);
+    this.logTimer = setInterval(() => this.setState(s => ({ logIdx: s.logIdx + 1 })), 3800);
+  }
+
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf);
+    clearInterval(this.timer); clearInterval(this.logTimer);
+    window.removeEventListener('pointermove', this.onMove);
+    window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('pointermove', this.stickMove);
+    window.removeEventListener('pointerup', this.stickUp);
+  }
+
+  onResize = () => {
+    const s = Math.min(window.innerWidth / 1600, window.innerHeight / 980);
+    this.setState({ scale: Math.max(0.3, Math.min(1.6, s)) });
+  };
+
+  onDown = (e) => { this.orbit.drag = { x: e.clientX, y: e.clientY, yaw: this.orbit.yaw, pitch: this.orbit.pitch }; };
+  onMove = (e) => {
+    const d = this.orbit && this.orbit.drag; if (!d) return;
+    const k = this.state.scale || 1;
+    this.orbit.yaw = d.yaw + (e.clientX - d.x) * 0.006 / k;
+    this.orbit.pitch = Math.max(-0.15, Math.min(1.2, d.pitch + (e.clientY - d.y) * 0.005 / k));
+  };
+  onUp = () => { if (this.orbit) this.orbit.drag = null; };
+
+  buildCloud() {
+    const pts = [];
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    for (let i = 0; i < 2400; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 13;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      pts.push({ x, y, z: Math.sin(x * 0.5) * 0.12 + Math.cos(y * 0.4) * 0.1 + rnd(-0.03, 0.03) });
+    }
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 900; i++) pts.push({ x: side * rnd(5.6, 6.1), y: rnd(-13, 13), z: rnd(0, 3.4) });
+    }
+    for (let k = 0; k < 7; k++) {
+      const cx = rnd(-4.5, 4.5), cy = rnd(-11, 11);
+      for (let i = 0; i < 130; i++) pts.push({ x: cx + rnd(-0.7, 0.7), y: cy + rnd(-0.7, 0.7), z: Math.abs(rnd(-0.1, 1.5)) });
+    }
+    for (let i = 0; i < 260; i++) { const a = Math.random() * Math.PI * 2; pts.push({ x: Math.cos(a) * rnd(1.4, 1.7), y: 9 + Math.sin(a) * rnd(0.3, 0.5), z: rnd(0, 1.75) }); }
+    this.cloud = pts;
+  }
+
+  sample() {
+    const t = (Date.now() - this.state.t0) / 1000;
+    const alarm = this.props.gasAlarm === true;
+    const n = (f, a) => Math.sin(t * f) * a;
+    const co = Math.max(0.4, (alarm ? 46 + n(0.7, 9) : 3.2 + n(0.3, 1.4) + n(1.7, .5)));
+    const ch4 = Math.max(60, (alarm ? 1850 + n(0.5, 260) : 340 + n(0.22, 90) + n(1.1, 25)));
+    this.setState({
+      tick: this.state.tick + 1,
+      co, ch4,
+      eco2: 470 + n(0.18, 90) + (alarm ? 620 : 0),
+      tvoc: 34 + n(0.4, 22) + (alarm ? 180 : 0),
+      temp: 24.4 + n(0.09, 1.2), hum: 41 + n(0.13, 5),
+      aqi: alarm ? 4 : (n(0.11, 1) > 0.4 ? 2 : 1),
+      roll: n(0.31, 11) + n(0.9, 2.5), pitch: n(0.24, 8) + n(1.3, 1.8), yaw: (t * 6) % 360,
+      ax: n(1.4, 0.9), ay: n(1.1, 0.7), az: 9.79 + n(2.2, 0.35),
+      rgbFps: (24.4 + n(3, 0.5)).toFixed(1), peak: (31 + n(0.5, 3.4)).toFixed(1),
+      detections: 1 + (Math.sin(t * 0.15) > 0 ? 1 : 0)
+    });
+  }
+
+  fit(ref) {
+    const c = ref.current; if (!c || !c.parentElement) return null;
+    const w = c.parentElement.clientWidth, h = c.parentElement.clientHeight;
+    if (!w || !h) return null;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  loop = () => {
+    this.raf = requestAnimationFrame(this.loop);
+    const t = (Date.now() - this.state.t0) / 1000;
+    this.frame = (this.frame || 0) + 1;
+    this.drawRGB(t); this.drawThermal(t); this.drawCloud(t); this.drawIMU(t); this.drawGyro(t); this.drawSpeedo(t);
+  };
+
+  blobPos(b, t) {
+    return { x: b.x + Math.sin(t * b.sp + b.ph) * 0.16, y: b.y + Math.cos(t * b.sp * 0.7 + b.ph) * 0.08 };
+  }
+
+  drawRGB(t) {
+    const f = this.fit(this.rgbRef); if (!f) return;
+    const { ctx, w, h } = f;
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#131018'); g.addColorStop(0.55, '#17131a'); g.addColorStop(1, '#0d0b10');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,.03)'; ctx.lineWidth = 1;
+    for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(0, h * i / 6); ctx.lineTo(w, h * i / 6); ctx.stroke(); }
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    this.blobs.forEach(b => {
+      const p = this.blobPos(b, t), cx = p.x * w, cy = p.y * h, r = b.r * h * 2.1;
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      rg.addColorStop(0, 'rgba(226,214,255,.55)'); rg.addColorStop(0.45, 'rgba(150,130,190,.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+    });
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.055)';
+    for (let i = 0; i < 700; i++) ctx.fillRect(Math.random() * w, Math.random() * h, 1.2, 1.2);
+    if (this.props.showDetections !== false) {
+      this.blobs.forEach((b, i) => {
+        const p = this.blobPos(b, t), bw = b.r * h * 2.0, bh = b.r * h * 2.9;
+        const x = p.x * w - bw / 2, y = p.y * h - bh / 2;
+        ctx.strokeStyle = i === 0 ? this.accent : this.lime; ctx.lineWidth = 1.4;
+        const c = 12;
+        [[x, y, 1, 1], [x + bw, y, -1, 1], [x, y + bh, 1, -1], [x + bw, y + bh, -1, -1]].forEach(([cx0, cy0, sx, sy]) => {
+          ctx.beginPath(); ctx.moveTo(cx0 + sx * c, cy0); ctx.lineTo(cx0, cy0); ctx.lineTo(cx0, cy0 + sy * c); ctx.stroke();
+        });
+        ctx.globalAlpha = 0.25; ctx.strokeRect(x, y, bw, bh); ctx.globalAlpha = 1;
+        ctx.font = '9px "Roboto Mono", monospace'; ctx.fillStyle = i === 0 ? this.accent : this.lime;
+        ctx.fillText('person ' + (0.82 + 0.1 * Math.abs(Math.sin(t + i))).toFixed(2), x, y - 5);
+      });
+    }
+    ctx.fillStyle = 'rgba(0,0,0,.30)';
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, h * 0.85);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.65)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+  }
+
+  iron(v) {
+    const stops = [[0, 0, 0], [36, 16, 64], [176, 42, 107], [255, 122, 24], [255, 210, 74], [255, 255, 255]];
+    const x = Math.max(0, Math.min(0.999, v)) * (stops.length - 1), i = Math.floor(x), f = x - i;
+    const a = stops[i], b = stops[i + 1];
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  }
+
+  drawThermal(t) {
+    const f = this.fit(this.thermRef); if (!f) return;
+    const { ctx, w, h } = f;
+    if (!this.thOff) { this.thOff = document.createElement('canvas'); this.thOff.width = 128; this.thOff.height = 96; }
+    const oc = this.thOff.getContext('2d'), img = oc.createImageData(128, 96);
+    const bs = this.blobs.map(b => this.blobPos(b, t));
+    for (let y = 0; y < 96; y++) {
+      for (let x = 0; x < 128; x++) {
+        const u = x / 128, v = y / 96;
+        let val = 0.16 + 0.10 * Math.sin(u * 6 + t * 0.3) * Math.cos(v * 5 - t * 0.2) + v * 0.06;
+        bs.forEach((p, i) => {
+          const dx = (u - p.x) * 1.5, dy = (v - p.y) * 1.0;
+          val += (i === 0 ? 0.85 : 0.62) * Math.exp(-(dx * dx + dy * dy) / 0.016);
+        });
+        val += (Math.random() - 0.5) * 0.035;
+        const c = this.iron(val), o = (y * 128 + x) * 4;
+        img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+      }
+    }
+    oc.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.thOff, 0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(w / 2 - 9, h / 2); ctx.lineTo(w / 2 + 9, h / 2); ctx.moveTo(w / 2, h / 2 - 9); ctx.lineTo(w / 2, h / 2 + 9); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,.18)';
+    for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+  }
+
+  proj(p, yaw, pitch, f, cx, cy, dist) {
+    const cy0 = Math.cos(yaw), sy0 = Math.sin(yaw);
+    const X = p.x * cy0 - p.y * sy0, Y = p.x * sy0 + p.y * cy0;
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const Y2 = Y * cp - p.z * sp, Z2 = Y * sp + p.z * cp;
+    const d = Y2 + dist;
+    if (d < 0.6) return null;
+    return { x: cx + X * f / d, y: cy - Z2 * f / d, d };
+  }
+
+  drawCloud(t) {
+    const fr = this.fit(this.cloudRef); if (!fr) return;
+    const { ctx, w, h } = fr;
+    if (!this.orbit.drag) this.orbit.yaw += 0.0016;
+    const yaw = this.orbit.yaw, pitch = this.orbit.pitch;
+    const f = h * 1.15, cx = w / 2, cy = h * 0.56, dist = 20;
+    ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
+    for (let g = -12; g <= 12; g += 4) {
+      const segs = [[{ x: g, y: -12, z: 0 }, { x: g, y: 12, z: 0 }], [{ x: -12, y: g, z: 0 }, { x: 12, y: g, z: 0 }]];
+      segs.forEach(s => {
+        const a = this.proj(s[0], yaw, pitch, f, cx, cy, dist), b = this.proj(s[1], yaw, pitch, f, cx, cy, dist);
+        if (a && b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      });
+    }
+    const sweep = ((t * 2.4) % 16);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < this.cloud.length; i++) {
+      const p = this.cloud[i], s = this.proj(p, yaw, pitch, f, cx, cy, dist);
+      if (!s || s.x < -20 || s.x > w + 20 || s.y < -20 || s.y > h + 20) continue;
+      const rad = Math.hypot(p.x, p.y);
+      const hot = Math.abs(rad - sweep) < 0.55;
+      const zc = Math.max(0, Math.min(1, p.z / 3.2));
+      let col;
+      if (hot) col = 'rgba(255,255,255,.95)';
+      else if (zc < 0.35) col = 'rgba(96,132,196,' + (0.42 + 0.4 * (1 - s.d / 34)) + ')';
+      else if (zc < 0.7) col = 'rgba(198,242,78,' + (0.36 + 0.4 * (1 - s.d / 34)) + ')';
+      else col = 'rgba(255,90,54,' + (0.42 + 0.4 * (1 - s.d / 34)) + ')';
+      ctx.fillStyle = col;
+      const sz = Math.max(0.7, 26 / s.d);
+      ctx.fillRect(s.x, s.y, sz, sz);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    const box = [[-0.6, -0.9, 0], [0.6, -0.9, 0], [0.6, 0.9, 0], [-0.6, 0.9, 0], [-0.6, -0.9, 0.7], [0.6, -0.9, 0.7], [0.6, 0.9, 0.7], [-0.6, 0.9, 0.7]].map(v => ({ x: v[0], y: v[1], z: v[2] }));
+    const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+    ctx.strokeStyle = this.accent; ctx.lineWidth = 1.5; ctx.shadowColor = this.accent; ctx.shadowBlur = 12;
+    edges.forEach(([a, b]) => {
+      const p1 = this.proj(box[a], yaw, pitch, f, cx, cy, dist), p2 = this.proj(box[b], yaw, pitch, f, cx, cy, dist);
+      if (p1 && p2) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+    });
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,.16)';
+    for (let ring = 4; ring <= 12; ring += 4) {
+      ctx.beginPath();
+      for (let a = 0; a <= 64; a++) {
+        const ang = a / 64 * Math.PI * 2;
+        const s = this.proj({ x: Math.cos(ang) * ring, y: Math.sin(ang) * ring, z: 0 }, yaw, pitch, f, cx, cy, dist);
+        if (!s) continue; a === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  drawIMU(t) {
+    const fr = this.fit(this.imuRef); if (!fr) return;
+    const { ctx, w, h } = fr;
+    const R = Math.min(w, h) * 0.34, cx = w / 2, cy = h / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 1.5, 0, 7); ctx.stroke();
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 0.25);
+    ctx.strokeStyle = 'rgba(255,90,54,.35)'; ctx.setLineDash([4, 22]);
+    ctx.beginPath(); ctx.arc(0, 0, R * 1.72, 0, 7); ctx.stroke(); ctx.restore(); ctx.setLineDash([]);
+    const roll = this.state.roll * Math.PI / 180, pitch = this.state.pitch * Math.PI / 180, yaw = this.state.yaw * Math.PI / 180;
+    const verts = [[-1, -1.6, -0.35], [1, -1.6, -0.35], [1, 1.6, -0.35], [-1, 1.6, -0.35], [-1, -1.6, 0.35], [1, -1.6, 0.35], [1, 1.6, 0.35], [-1, 1.6, 0.35], [0, 2.3, 0]];
+    const rot = (v) => {
+      let [x, y, z] = v;
+      let x1 = x * Math.cos(yaw) - y * Math.sin(yaw), y1 = x * Math.sin(yaw) + y * Math.cos(yaw);
+      let y2 = y1 * Math.cos(pitch) - z * Math.sin(pitch), z2 = y1 * Math.sin(pitch) + z * Math.cos(pitch);
+      let x3 = x1 * Math.cos(roll) - z2 * Math.sin(roll), z3 = x1 * Math.sin(roll) + z2 * Math.cos(roll);
+      return { x: x3, y: y2, z: z3 };
+    };
+    const pr = verts.map(v => { const r = rot(v); return this.proj(r, 0.55, 0.5, R * 3.1, cx, cy, 9); });
+    const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7], [2, 8], [3, 8], [6, 8], [7, 8]];
+    ctx.strokeStyle = this.accent; ctx.lineWidth = 1.6; ctx.shadowColor = this.accent; ctx.shadowBlur = 14;
+    edges.forEach(([a, b]) => { if (pr[a] && pr[b]) { ctx.beginPath(); ctx.moveTo(pr[a].x, pr[a].y); ctx.lineTo(pr[b].x, pr[b].y); ctx.stroke(); } });
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,90,54,.10)';
+    ctx.beginPath();
+    [4, 5, 6, 7].forEach((i, k) => { if (!pr[i]) return; k === 0 ? ctx.moveTo(pr[i].x, pr[i].y) : ctx.lineTo(pr[i].x, pr[i].y); });
+    ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-roll);
+    ctx.strokeStyle = 'rgba(198,242,78,.5)'; ctx.lineWidth = 1;
+    const off = this.state.pitch * 1.6;
+    ctx.beginPath(); ctx.moveTo(-R * 1.9, off); ctx.lineTo(-R * 0.7, off); ctx.moveTo(R * 0.7, off); ctx.lineTo(R * 1.9, off); ctx.stroke();
+    ctx.restore();
+  }
+
+  speedTarget() {
+    const s = this.state;
+    const k = s.estop ? 0 : (s.mode === 'CRAWL' ? 0.35 : s.mode === 'SPRINT' ? 1.6 : 0.85);
+    return Math.min(1.6, Math.abs(-s.ly * k));
+  }
+
+  drawSpeedo(t) {
+    const fr = this.fit(this.speedoRef); if (!fr) return;
+    const { ctx, w, h } = fr;
+    const target = this.speedTarget();
+    this.speedShown = (this.speedShown || 0) + (target - (this.speedShown || 0)) * 0.12;
+    const v = this.speedShown, max = 1.6, p = Math.max(0, Math.min(1, v / max));
+    this.speedPeak = Math.max(p, (this.speedPeak || 0) - 0.0022);
+    const rowY = h * 0.44, barH = h * 0.5, segs = 26, gap = 3;
+    const segW = (w - gap * (segs - 1)) / segs;
+    const colAt = f => f > 0.84 ? '#FF3B2F' : f > 0.6 ? '#FFB33D' : '#C6F24E';
+    for (let i = 0; i < segs; i++) {
+      const f = i / (segs - 1), x = i * (segW + gap);
+      const on = f <= p + 0.0001;
+      const hh = barH * (0.42 + 0.58 * f);
+      const y = rowY - hh / 2;
+      if (on) {
+        const c = colAt(f);
+        const edge = Math.abs(f - p) < 0.06;
+        ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = edge ? 14 : 6;
+        ctx.globalAlpha = edge ? 1 : 0.9;
+      } else {
+        ctx.fillStyle = this.state.light ? 'rgba(22,24,31,.14)' : 'rgba(255,255,255,.10)'; ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      }
+      ctx.fillRect(x, y, segW, hh);
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    const px = Math.min(w - 2, this.speedPeak * w);
+    if (this.speedPeak > 0.02) {
+      ctx.fillStyle = this.state.light ? 'rgba(22,24,31,.5)' : 'rgba(255,255,255,.55)';
+      ctx.fillRect(px - 1, rowY - barH * 0.62, 2, barH * 1.24);
+    }
+    const scanX = ((t * 0.55) % 1) * w * p;
+    if (p > 0.05) {
+      const g = ctx.createLinearGradient(scanX - 26, 0, scanX + 26, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,.16)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(scanX - 26, rowY - barH * 0.6, 52, barH * 1.2);
+    }
+    ctx.font = '8px "Roboto Mono", monospace';
+    ctx.fillStyle = this.state.light ? 'rgba(22,24,31,.5)' : 'rgba(232,232,234,.34)';
+    ctx.textBaseline = 'alphabetic';
+    ['0', '0.8', '1.6'].forEach((lab, i) => {
+      const x = i === 0 ? 0 : i === 1 ? w / 2 : w;
+      ctx.textAlign = i === 0 ? 'left' : i === 1 ? 'center' : 'right';
+      ctx.fillText(lab, x, h - 1);
+    });
+  }
+
+  drawGyro(t) {
+    const fr = this.fit(this.gyroRef); if (!fr) return;
+    const { ctx, w, h } = fr;
+    const vals = [Math.sin(t * 2.1) * 0.6, Math.sin(t * 1.3 + 1) * 0.42, Math.sin(t * 3.4 + 2) * 0.28];
+    if (this.frame % 2 === 0) vals.forEach((v, i) => { this.gyroHist[i].push(v); if (this.gyroHist[i].length > 140) this.gyroHist[i].shift(); });
+    ctx.strokeStyle = 'rgba(255,255,255,.07)';
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    const cols = [this.accent, this.lime, 'rgba(160,170,200,.85)'];
+    this.gyroHist.forEach((arr, i) => {
+      ctx.strokeStyle = cols[i]; ctx.lineWidth = 1.3; ctx.beginPath();
+      arr.forEach((v, k) => { const x = k / 139 * w, y = h / 2 - v * h * 0.4; k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+      ctx.stroke();
+    });
+  }
+
+  ok() { return this.state.light ? '#3F6B06' : this.lime; }
+
+  gauge(label, value, unit, pct, sub, warn) {
+    const lt = this.state.light;
+    const col = warn === 2 ? (lt ? '#C22217' : '#FF3B2F') : warn === 1 ? (lt ? '#9A6300' : '#FFB33D') : this.ok();
+    const p = Math.max(0, Math.min(1, pct));
+    return {
+      label, value, unit, sub,
+      dash: (p * 207.3).toFixed(1) + ' 400',
+      color: col,
+      glow: warn === 2 ? 'rgba(255,59,47,.20)' : warn === 1 ? 'rgba(255,179,61,.18)' : (lt ? 'rgba(63,107,6,.14)' : 'rgba(198,242,78,.16)'),
+      border: warn ? (warn === 2 ? 'rgba(255,59,47,.45)' : 'rgba(255,179,61,.35)') : (lt ? 'rgba(22,24,31,.10)' : 'rgba(255,255,255,.07)'),
+      state: warn === 2 ? 'ALARM' : warn === 1 ? 'ELEVATED' : 'NOMINAL'
+    };
+  }
+
+  ramp(p, lt) {
+    p = Math.max(0, Math.min(1, p));
+    const stops = lt
+      ? [[63,107,6], [154,99,0], [194,34,23]]
+      : [[198,242,78], [255,179,61], [255,59,47]];
+    const seg = p < 0.5 ? 0 : 1, k = p < 0.5 ? p / 0.5 : (p - 0.5) / 0.5;
+    const a = stops[seg], b = stops[seg + 1];
+    const c = a.map((v, i) => Math.round(v + (b[i] - v) * k));
+    return { hex: 'rgb(' + c.join(',') + ')', glow: 'rgba(' + c.join(',') + ',' + (0.16 + 0.26 * p).toFixed(2) + ')' };
+  }
+
+  perfVals(lt, s) {
+    const t = s.tick + (this.perfPhase || 0);
+    // Live telemetry from /perf when the board is reachable; the sine-wave
+    // simulation below is the fallback so the panel still animates offline.
+    const L = (typeof window !== 'undefined' && window.__PERF__) || null;
+    const cores = [];
+    let loadSum = 0;
+    const n = (L && L.cores && L.cores.length) ? L.cores.length : 8;
+    for (let i = 0; i < n; i++) {
+      const big = i >= 4;
+      let load, clock;
+      if (L && L.cores && L.cores[i]) {
+        load = Math.max(0, Math.min(100, Math.round(L.cores[i].load)));
+        clock = L.cores[i].clock || 0;
+      } else {
+        load = Math.max(3, Math.min(99, Math.round(
+          (big ? 50 : 30) + Math.sin(t / (5 + i * 0.7) + i * 1.9) * 26 + Math.cos(t / 2.3 + i) * 9
+        )));
+        const mn = 480, mx = big ? 1800 : 1500;
+        clock = Math.round((mn + (mx - mn) * (load / 100)) / 24) * 24;
+      }
+      loadSum += load;
+      const r = this.ramp(load / 100, lt);
+      cores.push({
+        label: 'C' + i + (big ? '·H' : ''),
+        load: String(load), clock: String(clock),
+        dash: ((load / 100) * 216.8).toFixed(1) + ' 400',
+        color: r.hex, glow: r.glow
+      });
+    }
+
+    const hasBpu = L && L.bpu && typeof L.bpu.ratio === 'number';
+    const bpuLoad = hasBpu
+      ? Math.max(0, Math.min(100, Math.round(L.bpu.ratio)))
+      : Math.max(3, Math.min(99, Math.round(46 + Math.sin(t / 9) * 30 + Math.sin(t / 3.1) * 12)));
+    const bpuP = bpuLoad / 100;
+    const bpuClock = hasBpu ? (L.bpu.cur || 0) : (400 + Math.round(bpuP * 6) * 100);
+    const br = this.ramp(bpuP, lt);
+    const ticks = [];
+    for (let i = 0; i <= 12; i++) {
+      const p = i / 12, major = i % 2 === 0;
+      ticks.push({
+        rot: (-135 + 270 * p).toFixed(1) + 'deg',
+        w: major ? '3px' : '2px',
+        h: major ? '13px' : '7px',
+        color: p > 0.82 ? 'rgba(255,59,47,.75)' : (lt ? 'rgba(22,24,31,' + (major ? .5 : .28) + ')' : 'rgba(255,255,255,' + (major ? .55 : .25) + ')')
+      });
+    }
+
+    const mk = (label, v, max, sub) => {
+      const p = Math.max(0, Math.min(1, (v - 25) / (max - 25)));
+      const r = this.ramp(p, lt);
+      return {
+        label, value: v.toFixed(1), sub,
+        height: (p * 100).toFixed(0) + '%',
+        color: r.hex, glow: r.glow,
+        state: p > 0.82 ? 'THROTTLE' : p > 0.62 ? 'WARM' : 'NOMINAL',
+        border: p > 0.82 ? 'rgba(255,59,47,.45)' : p > 0.62 ? 'rgba(255,179,61,.35)' : (lt ? 'rgba(22,24,31,.12)' : 'rgba(255,255,255,.10)')
+      };
+    };
+    const cpuAvg = loadSum / n;
+    const T = (L && L.temps) || {};
+    const bpuT = (typeof T.BPU === 'number') ? T.BPU
+               : 44 + bpuP * 26 + Math.sin(t / 11) * 6;
+    const cpuT = (typeof T.CPU === 'number') ? T.CPU
+               : 40 + cpuAvg * 0.28 + Math.cos(t / 8) * 5 + Math.sin(t / 2.7) * 1.5;
+    const ramT = (typeof T.DDR === 'number') ? T.DDR
+               : 36 + Math.sin(t / 13 + 1.2) * 5 + cpuAvg * 0.06;
+    const temps = [
+      mk('BPU TEMP', bpuT, 95, 'junction · fan auto'),
+      mk('CPU TEMP', cpuT, 95, 'thermal zone 0'),
+      mk('RAM TEMP', ramT, 85,
+         (L && L.mem && L.mem.total_mb)
+           ? ('LPDDR4 · ' + L.mem.used_mb + ' / ' + L.mem.total_mb + ' MB')
+           : 'LPDDR4 4 GB')
+    ];
+    const worst = Math.max(...temps.map(x => x.state === 'THROTTLE' ? 1 : x.state === 'WARM' ? 0.65 : 0.2));
+
+    return {
+      cores, temps, ticks,
+      bpuClock: String(bpuClock), bpuLoad: String(bpuLoad),
+      bpuDash: (bpuP * 461.8).toFixed(1) + ' 900',
+      needleRot: (-135 + 270 * bpuP).toFixed(1) + 'deg',
+      bpuColor: br.hex, bpuGlow: br.glow,
+      bpuFps: (L && L.det_hz != null) ? Number(L.det_hz).toFixed(1)
+                                       : (18 + bpuP * 22).toFixed(1),
+      bpuState: bpuP > 0.85 ? 'SATURATED' : bpuP > 0.5 ? 'INFERENCING' : 'IDLE',
+      bpuStateColor: br.hex,
+      thermLabel: worst === 1 ? 'THERMAL THROTTLING' : worst === 0.65 ? 'ELEVATED' : 'THERMALS NOMINAL',
+      thermColor: this.ramp(worst, lt).hex
+    };
+  }
+
+  renderVals() {
+    const s = Object.assign({}, this.state,
+      (typeof window !== 'undefined' && window.__GASV__) || {});
+    const view = this.state.view, lt = this.state.light;
+    const show = (k) => (view === 'OVERVIEW' || view === k) ? 'flex' : 'none';
+    const layouts = {
+      OVERVIEW: ['1.32fr 1fr', '1.12fr 1fr', '"vision cloud" "atmo imu"'],
+      PILOT: ['1fr', '2.2fr 0.24fr 1.3fr', '"vision" "imurow" "pilot"'],
+      VISION: ['1fr 1fr', '1fr 1fr', '"vision vision" "vision vision"'],
+      CLOUD: ['1fr 1fr', '1fr 1fr', '"cloud cloud" "cloud cloud"'],
+      ATMO: ['1fr 1fr', '1fr 1fr', '"atmo atmo" "atmo atmo"'],
+      IMU: ['1fr 1fr', '1fr 1fr', '"imu imu" "imu imu"'],
+      PERF: ['1fr 1fr', '1fr 1fr', '"perf perf" "perf perf"']
+    };
+    const L = layouts[view];
+    const idx = this.views.indexOf(view);
+    const coWarn = s.co > 35 ? 2 : s.co > 9 ? 1 : 0;
+    const chWarn = s.ch4 > 1200 ? 2 : s.ch4 > 700 ? 1 : 0;
+    const airWarn = s.eco2 > 1000 ? 2 : s.eco2 > 800 ? 1 : 0;
+    const worst = Math.max(coWarn, chWarn, airWarn);
+    const el = Math.round(( Date.now() - s.t0) / 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const logs = [];
+    for (let i = 0; i < 4; i++) {
+      const e = this.logPool[(s.logIdx + i) % this.logPool.length];
+      logs.push({ text: e[0], color: e[1] === 'accent' ? this.accent : e[1] === 'lime' ? this.ok() : (lt ? 'rgba(22,24,31,.6)' : 'rgba(232,232,234,.5)') });
+    }
+    const accelRow = (label, v) => {
+      const p = Math.max(-1, Math.min(1, v / 12));
+      return { label, value: v.toFixed(2), left: (50 + Math.min(0, p) * 50) + '%', width: Math.abs(p) * 50 + '%', color: Math.abs(v) > 6 ? this.accent : this.ok() };
+    };
+    return {
+      fitScale: String(s.scale || 1),
+      toggleTheme: () => this.setState(st => ({ light: !st.light })),
+      themeLabel: lt ? 'LIGHT' : 'DARK',
+      themeDotBg: lt ? 'radial-gradient(circle at 35% 30%, #FFF2C4, #FFB33D)' : 'radial-gradient(circle at 35% 30%, #4A4E5C, #16181F)',
+      themeDotShadow: lt ? '0 0 12px rgba(255,179,61,.8)' : 'inset 0 0 0 1px rgba(255,255,255,.25)',
+      shellBg: lt ? '#E7E7EA' : '#08080A',
+      pageBg: lt
+        ? 'radial-gradient(1200px 700px at 12% -10%, #FFFFFF 0%, #EDEDF1 55%), radial-gradient(900px 600px at 100% 110%, #FFF1EA 0%, rgba(237,237,241,0) 60%), #EDEDF1'
+        : 'radial-gradient(1200px 700px at 12% -10%, #191a20 0%, #0B0B0D 55%), radial-gradient(900px 600px at 100% 110%, #17120f 0%, rgba(11,11,13,0) 60%), #0B0B0D',
+      textMain: lt ? '#16181F' : '#E8E8EA',
+      textDim: lt ? 'rgba(22,24,31,.55)' : 'rgba(232,232,234,.42)',
+      panelBg: lt ? 'linear-gradient(180deg, rgba(22,24,31,.055), rgba(22,24,31,.018))' : 'linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018))',
+      panelBorder: lt ? 'rgba(22,24,31,.12)' : 'rgba(255,255,255,.09)',
+      tileBg: lt ? 'rgba(22,24,31,.045)' : 'rgba(255,255,255,.035)',
+      tileBorder: lt ? 'rgba(22,24,31,.10)' : 'rgba(255,255,255,.07)',
+      accent: this.accent,
+      lensX: 'calc(' + idx + ' * 100%)',
+      navItems: this.views.map(v => ({
+        label: v, go: () => this.setState({ view: v }),
+        color: v === view ? (s.light ? '#16181F' : '#FFFFFF') : (s.light ? 'rgba(22,24,31,.55)' : 'rgba(232,232,234,.55)'),
+        dot: v === view ? this.accent : 'rgba(255,255,255,.18)'
+      })),
+      chips: [
+        { label: 'LINK', value: (typeof location !== 'undefined' && location.hostname) ? location.hostname : 'offline', color: this.ok() },
+        { label: 'BPU', value: (34 + Math.round(Math.sin(s.tick / 9) * 8)) + '%', color: this.accent },
+        { label: 'CPU', value: (61 + Math.round(Math.cos(s.tick / 7) * 9)) + '%', color: '#FFB33D' }
+      ],
+      gridCols: L[0], gridRows: L[1], gridAreas: L[2],
+      visionShow: (view === 'OVERVIEW' || view === 'VISION' || view === 'PILOT') ? 'flex' : 'none',
+      pilotShow: view === 'PILOT' ? 'flex' : 'none',
+      stickDownL: this.stickDownL, stickDownR: this.stickDownR,
+      visionCols: view === 'PILOT' ? '2.6fr 1fr' : '1fr 1fr',
+      footerShow: view === 'PILOT' ? 'none' : 'flex',
+      speedoRef: this.speedoRef,
+      speedText: (this.speedShown || 0).toFixed(2),
+      speedColor: s.estop ? (lt ? '#C22217' : '#FF3B2F') : (this.speedShown || 0) > 1.3 ? (lt ? '#9A6300' : '#FFB33D') : (lt ? '#2F5205' : '#C6F24E'),
+      speedGlow: s.estop ? 'rgba(255,59,47,.4)' : (lt ? 'rgba(63,107,6,.18)' : 'rgba(198,242,78,.35)'),
+      speedoBg: lt ? 'rgba(22,24,31,.05)' : 'rgba(0,0,0,.28)',
+      speedoBorder: lt ? 'rgba(22,24,31,.10)' : 'rgba(255,255,255,.08)',
+      chipValueColor: lt ? '#16181F' : '#E8E8EA',
+      trackColor: lt ? 'rgba(22,24,31,.12)' : 'rgba(255,255,255,.08)',
+      speedSub: s.estop ? 'DISARMED' : (this.speedShown || 0) > 0.03 ? 'GROUND SPEED' : 'STANDBY',
+      cloudShow: show('CLOUD'), atmoShow: show('ATMO'), imuShow: show('IMU'),
+      perfShow: view === 'PERF' ? 'flex' : 'none',
+      ...this.perfVals(lt, s),
+      knobLX: (s.lx * 52).toFixed(1) + 'px', knobLY: (s.ly * 52).toFixed(1) + 'px',
+      knobRX: (s.rx * 52).toFixed(1) + 'px', knobRY: (s.ry * 52).toFixed(1) + 'px',
+      driveState: s.estop ? 'MOTORS DISARMED' : (Math.abs(s.ly) + Math.abs(s.rx) > 0.02 ? 'DRIVING' : 'ARMED · IDLE'),
+      driveColor: s.estop ? '#FF3B2F' : (Math.abs(s.ly) + Math.abs(s.rx) > 0.02 ? this.accent : this.ok()),
+      modes: ['CRAWL', 'CRUISE', 'SPRINT'].map(m => ({
+        label: m === 'CRAWL' ? 'STABLE' : m === 'SPRINT' ? 'LUDICROUS' : m,
+        go: () => this.setState({ mode: m }),
+        color: m === s.mode ? '#0B0B0D' : (lt ? 'rgba(22,24,31,.62)' : 'rgba(232,232,234,.6)'),
+        bg: m === s.mode ? this.lime : (lt ? 'rgba(22,24,31,.045)' : 'rgba(255,255,255,.05)'),
+        border: m === s.mode ? this.lime : (lt ? 'rgba(22,24,31,.14)' : 'rgba(255,255,255,.12)')
+      })),
+      cmdRows: (() => {
+        const k = s.estop ? 0 : (s.mode === 'CRAWL' ? 0.35 : s.mode === 'SPRINT' ? 1.6 : 0.85);
+        const lin = -s.ly * k, ang = -s.rx * k * 1.4;
+        const row = (label, v, max, unit) => {
+          const p = Math.max(-1, Math.min(1, v / max));
+          return { label, value: v.toFixed(2) + unit, left: (50 + Math.min(0, p) * 50) + '%', width: (Math.abs(p) * 50) + '%', color: s.estop ? '#FF3B2F' : this.accent };
+        };
+        return [row('linear.x', lin, 1.6, ''), row('angular.z', ang, 2.24, '')];
+      })(),
+      toggleStop: () => this.setState(st => ({ estop: !st.estop, lx: 0, ly: 0, rx: 0, ry: 0 })),
+      stopLabel: s.estop ? 'RE-ARM' : 'E-STOP',
+      stopColor: s.estop ? '#0B0B0D' : '#FF3B2F',
+      stopBg: s.estop ? this.lime : (lt ? 'rgba(255,59,47,.10)' : 'rgba(255,59,47,.12)'),
+      stopBorder: s.estop ? this.lime : 'rgba(255,59,47,.55)',
+      rgbRef: this.rgbRef, thermRef: this.thermRef, cloudRef: this.cloudRef, imuRef: this.imuRef, gyroRef: this.gyroRef,
+      rgbFps: s.rgbFps, peakTemp: s.peak, detectionCount: s.detections,
+      pointCount: this.cloud ? this.cloud.length.toLocaleString() : '—', cloudRange: '13.0',
+      atmoStatus: worst === 2 ? 'GAS ALARM' : worst === 1 ? 'ELEVATED' : 'ALL NOMINAL',
+      atmoStatusColor: worst === 2 ? '#FF3B2F' : worst === 1 ? (lt ? '#9A6300' : '#FFB33D') : this.ok(),
+      atmoBorder: worst === 2 ? 'rgba(255,59,47,.45)' : (lt ? 'rgba(22,24,31,.12)' : 'rgba(255,255,255,.09)'),
+      gauges: [
+        this.gauge('CO · MEMS', s.co.toFixed(1), 'ppm', s.co / 60, 'MEMS · uncalibrated', coWarn),
+        this.gauge('CH4 · MEMS', Math.round(s.ch4), 'ppm', s.ch4 / 2500, 'MEMS · uncalibrated', chWarn),
+        this.gauge('eCO2 · ENS160', Math.round(s.eco2), 'ppm', (s.eco2 - 400) / 1400, 'TVOC ' + Math.round(s.tvoc) + ' ppb · AQI ' + s.aqi, airWarn),
+        this.gauge('CLIMATE · AHT21', s.temp.toFixed(1), '°C', (s.temp - 10) / 30, 'RH ' + s.hum.toFixed(0) + ' %', 0)
+      ],
+      attitude: [
+        { label: 'ROLL', value: s.roll.toFixed(1) + '°', color: Math.abs(s.roll) > 20 ? this.accent : (lt ? '#16181F' : '#E8E8EA') },
+        { label: 'PITCH', value: s.pitch.toFixed(1) + '°', color: Math.abs(s.pitch) > 20 ? this.accent : (lt ? '#16181F' : '#E8E8EA') },
+        { label: 'YAW', value: s.yaw.toFixed(0) + '°', color: lt ? '#16181F' : '#E8E8EA' }
+      ],
+      accels: [accelRow('aX', s.ax), accelRow('aY', s.ay), accelRow('aZ', s.az)],
+      tiltLabel: Math.abs(s.roll) > 20 || Math.abs(s.pitch) > 20 ? 'TILT WARNING' : 'STABLE',
+      tiltColor: Math.abs(s.roll) > 20 || Math.abs(s.pitch) > 20 ? (lt ? '#9A6300' : '#FFB33D') : this.ok(),
+      logLines: logs,
+      clock: pad(Math.floor(el / 3600)) + ':' + pad(Math.floor(el / 60) % 60) + ':' + pad(el % 60)
+    };
+  }
+}
+</script>
+
+<script>
+/* Live telemetry.
+   Everything is fetched from whichever host served this page, so the console
+   follows your IP automatically — hotspot, home WiFi, ubuntu.local, all work
+   with no edits.
+
+   Panels fall back to their built-in simulation when the board is
+   unreachable, so the console still demos offline. That means smooth gauges
+   are NOT proof of a live link — check /perf if you need certainty. */
+(function () {
+  var BASE = (location.protocol === 'file:')
+    ? 'http://192.168.0.106:8080'   /* opened from disk: edit if needed */
+    : '';                            /* served by the board: same origin */
+
+  function pull(path, cb) {
+    fetch(BASE + path, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(cb).catch(function () { cb(null); });
+  }
+
+  /* ---- system performance -------------------------------------------- */
+  function perf() {
+    pull('/perf', function (d) {
+      window.__PERF__ = (d && d.cores && d.cores.length) ? d : null;
+    });
+  }
+
+  /* ---- gas: map /gas onto the field names the panel already uses ------ */
+  function gas() {
+    pull('/gas', function (d) {
+      if (!d || (d._meta && d._meta.stale)) { window.__GASV__ = null; return; }
+      var g = {}, K = ['co','ch4','eco2','tvoc','aqi','temp','hum'];
+      K.forEach(function (k) { if (typeof d[k] === 'number') g[k] = d[k]; });
+      window.__GASV__ = Object.keys(g).length ? g : null;
+    });
+  }
+
+  /* ---- detections: drawn onto canvases layered over the feeds ---------
+     The panels use object-fit:cover, so the frame is scaled to FILL and the
+     overflow cropped. Boxes must go through the same transform or they land
+     in the wrong place — hence max() scale with centred offsets. */
+  var COLOR = { RGB: '#FF5A36', Thermal: '#C6F24E' };
+
+  function drawDet(d) {
+    document.querySelectorAll('canvas.detOverlay').forEach(function (cv) {
+      var key = cv.getAttribute('data-feed');
+      var img = cv.parentElement && cv.parentElement.querySelector('img');
+      var f = d && d[key];
+      if (!img) return;
+      var W = img.clientWidth, H = img.clientHeight;
+      if (!W || !H) return;
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      var g = cv.getContext('2d');
+      g.clearRect(0, 0, W, H);
+      if (!f || !f.w || !f.boxes) return;
+
+      var sc = Math.max(W / f.w, H / f.h);
+      var ox = (W - f.w * sc) / 2, oy = (H - f.h * sc) / 2;
+      g.lineWidth = 2;
+      g.strokeStyle = COLOR[key] || '#FF5A36';
+      g.font = "600 12px 'Roboto Mono', monospace";
+      f.boxes.forEach(function (b) {
+        var x = b[0]*sc + ox, y = b[1]*sc + oy;
+        var w = (b[2]-b[0])*sc, h = (b[3]-b[1])*sc;
+        g.strokeRect(x, y, w, h);
+        var t = 'person ' + b[4].toFixed(2);
+        var tw = g.measureText(t).width;
+        g.fillStyle = 'rgba(0,0,0,.65)';
+        g.fillRect(x, Math.max(y - 16, 0), tw + 8, 15);
+        g.fillStyle = COLOR[key] || '#FF5A36';
+        g.fillText(t, x + 4, Math.max(y - 5, 11));
+      });
+    });
+  }
+
+  function det() {
+    pull('/detections', function (d) {
+      window.__DET__ = d;
+      if (window.__PERF__ && d) {
+        var r = d.RGB || {}, t = d.Thermal || {};
+        window.__PERF__.det_hz = Math.max(r.hz || 0, t.hz || 0);
+      }
+      drawDet(d);
+    });
+  }
+
+  perf(); gas(); det();
+  setInterval(perf, 1000);   /* matches hrut_somstatus sampling */
+  setInterval(gas, 1000);
+  setInterval(det, 120);
+  window.addEventListener('resize', function () { drawDet(window.__DET__); });
+})();
+</script>
+
+</body>
+</html>
