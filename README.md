@@ -258,7 +258,10 @@ make
 
 ## Technical Documentation Index
 
-For exhaustive technical deep-dives, consult the `docs/` folder:
+For an exhaustive, beginner-friendly yet mathematically rigorous breakdown of the entire project:
+- 📖 **[Master Comprehensive Project Guide (Beginner to Expert)](docs/COMPREHENSIVE_PROJECT_GUIDE.md)** — *Must-read complete technical journey covering hardware bringup, BPU quantization, v1–v10 iteration evolution, bottleneck analysis, and C acceleration.*
+
+### Topic-Specific Technical Deep-Dives:
 - [01. Hardware & Dual-Camera Bringup Guide](docs/01_hardware_and_camera_bringup.md)
 - [02. BPU Model Conversion & Quantization Guide](docs/02_bpu_model_conversion_guide.md)
 - [03. Pipeline Evolution Log (v1 through v10)](docs/03_pipeline_evolution_v1_to_v10.md)
