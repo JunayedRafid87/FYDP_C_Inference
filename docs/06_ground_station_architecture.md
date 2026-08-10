@@ -41,10 +41,16 @@ The backend server implements non-blocking, multi-threaded request routing:
 
 ---
 
-## 3. High-Fidelity Rendering Mechanics
+## 3. High-Fidelity Rendering Mechanics & 3D Dashboard Suite
 
 ### 1. `image-rendering: crisp-edges`
 Because the thermal sensor captures native 256×192 frames, default browser bilinear filtering blurs pixel boundaries. Setting `image-rendering: crisp-edges` renders individual LWIR sensor pixels sharply without artificial smoothing.
 
 ### 2. Client-Side Bounding Box Canvas Overlay
 Instead of burning bounding boxes directly into JPEG video frames on the rover CPU (which consumes memory bandwidth and prevents raw telemetry recording), bounding boxes are sent as lightweight JSON over `/detections` and rendered client-side on an HTML5 `<canvas>` positioned over the video stream.
+
+### 3. Original 3D Dashboard Console (`3d_console_source/`)
+The original design files located in `ground_station/3d_console_source/` and `Rover_Ground_Station.dc.html` contain:
+- The full 3D styled web console with depth layers, perspective transforms, and dark UI glassmorphism.
+- The dedicated **PERF tab** template source displaying SOM temperatures, DDR/BPU clocks, and core frequency gauges.
+- Complete asset pack including `Logo for FYDP.png`, `screenshots/` (`perf.png`, `perf2.png`), and `uploads/`.

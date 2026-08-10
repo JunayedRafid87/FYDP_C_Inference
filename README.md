@@ -104,6 +104,9 @@ FYDP_C_Inference/
 ├── ground_station/                          # Web Console UI Iterations (HTML & JS)
 │   ├── Rover_GS_fix_v1.html                 # [LATEST PRODUCTION v10] Two-file GS console
 │   ├── gs_support_v2.js                     # [LATEST PRODUCTION v10] Companion JS telemetry runtime
+│   ├── Rover_Ground_Station.dc.html         # 3D Dashboard Source Template (PERF tab & visual effects)
+│   ├── Rover_Ground_Station_standalone-src.dc.html # Standalone 3D Dashboard source
+│   ├── 3d_console_source/                   # Full 3D Console Suite (screenshots, assets, uploads)
 │   ├── Rover_GS_final_v1.html               # v9 Web Console
 │   ├── Rover_GS_selfcontained_v1.html       # v8 Self-contained inline console
 │   ├── Rover_GS_live_v3.html                # v7 Live Console
