@@ -402,6 +402,7 @@ class InferThread(threading.Thread):
 
     def run(self):
         try:
+            print(f"[{self.name}] Initializing {self.backend.upper()} predictor with model: {self.model_path} (classes={self.classes_num}, keep_class={self.keep_class})")
             if self.backend == "bpu":
                 pred = BPUPredictor(self.model_path, conf_thresh=self.conf,
                                     classes_num=self.classes_num,
@@ -409,12 +410,13 @@ class InferThread(threading.Thread):
             else:
                 pred = ONNXPredictor(self.model_path, imgsz=self.imgsz,
                                      conf_thresh=self.conf, threads=self.threads)
+            print(f"[{self.name}] Predictor successfully loaded: {self.model_path}")
         except Exception as e:
-            print(f"[{self.name}] model load failed: {e}")
-            import traceback; traceback.print_exc()
+            print(f"[{self.name}] ERROR: model load failed for '{self.model_path}': {e}")
+            import traceback
+            traceback.print_exc()
             return
 
-        print(f"[{self.name}] model ready ({pred.threads}): {self.model_path}")
         last, t0 = -1, time.time()
         while self.running:
             frame, seq = self.src.get()
@@ -422,13 +424,17 @@ class InferThread(threading.Thread):
                 time.sleep(0.002)
                 continue
             last = seq
-            t_start = time.time()
-            boxes = pred.predict(frame)
-            self.ms = (time.time() - t_start) * 1000.0
-            now = time.time()
-            self.hz = 0.8 * self.hz + 0.2 / max(now - t0, 1e-5)
-            t0 = now
-            self.out.put(boxes)
+            try:
+                t_start = time.time()
+                boxes = pred.predict(frame)
+                self.ms = (time.time() - t_start) * 1000.0
+                now = time.time()
+                self.hz = 0.8 * self.hz + 0.2 / max(now - t0, 1e-5)
+                t0 = now
+                self.out.put(boxes)
+            except Exception as e:
+                print(f"[{self.name}] Inference runtime error: {e}")
+                time.sleep(0.05)
 
 
 class CameraWorker(threading.Thread):
