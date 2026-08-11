@@ -729,7 +729,7 @@ def main():
     parser.add_argument("--colormap", choices=list(COLORMAPS.keys()), default="none")
     parser.add_argument("--thermal-model", default="thermal_yolo11n_v3_bayese_640x640_nv12.bin")
     parser.add_argument("--rgb-model", default="yolo11m_detect_bayese_640x640_nv12.bin")
-    parser.add_argument("--thermal-conf", type=float, default=0.25, help="Thermal confidence threshold")
+    parser.add_argument("--thermal-conf", type=float, default=0.20, help="Thermal confidence threshold")
     parser.add_argument("--rgb-conf", type=float, default=0.50, help="RGB confidence threshold")
     parser.add_argument("--thermal-classes", type=int, default=1)
     parser.add_argument("--rgb-classes", type=int, default=80)
