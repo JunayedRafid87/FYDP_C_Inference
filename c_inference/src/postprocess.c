@@ -92,15 +92,18 @@ void run_nms(DetectionBox* candidates, int num_candidates, float iou_threshold, 
 
     qsort(candidates, num_candidates, sizeof(DetectionBox), compare_boxes);
 
-    uint8_t* suppressed = (uint8_t*)calloc(num_candidates, sizeof(uint8_t));
+    uint8_t suppressed[MAX_DETECTIONS * 4];
+    memset(suppressed, 0, sizeof(suppressed));
     int count = 0;
 
-    for (int i = 0; i < num_candidates && count < MAX_DETECTIONS; ++i) {
+    int max_check = (num_candidates > 500) ? 500 : num_candidates;
+
+    for (int i = 0; i < max_check && count < MAX_DETECTIONS; ++i) {
         if (suppressed[i]) continue;
 
         result->boxes[count++] = candidates[i];
 
-        for (int j = i + 1; j < num_candidates; ++j) {
+        for (int j = i + 1; j < max_check; ++j) {
             if (suppressed[j]) continue;
             if (candidates[i].class_id == candidates[j].class_id) {
                 float iou = compute_iou(&candidates[i], &candidates[j]);
@@ -111,7 +114,6 @@ void run_nms(DetectionBox* candidates, int num_candidates, float iou_threshold, 
         }
     }
 
-    free(suppressed);
     result->count = count;
 }
 
@@ -126,7 +128,12 @@ void decode_yolo11_outputs(
 ) {
     if (!luts_initialized) init_postprocess_luts();
 
-    DetectionBox* candidate_buffer = (DetectionBox*)malloc(sizeof(DetectionBox) * 10000);
+    // Fast logit threshold: inverse sigmoid(conf_threshold)
+    // If conf_threshold == 0.5, logit_thresh == 0.0
+    // If conf_threshold == 0.35, logit_thresh == -0.619
+    float logit_threshold = -logf((1.0f / conf_threshold) - 1.0f);
+
+    static DetectionBox candidate_buffer[2048];
     int num_candidates = 0;
 
     for (int s = 0; s < num_scales; ++s) {
@@ -143,9 +150,8 @@ void decode_yolo11_outputs(
             for (int w = 0; w < grid_w; ++w) {
                 int grid_idx = h * grid_w + w;
                 const float* cls_p = cls_base + grid_idx * num_classes;
-                const float* reg_p = reg_base + grid_idx * 64;
 
-                // Find max class confidence
+                // Quick rejection before doing any math
                 int best_cls = 0;
                 float best_score = cls_p[0];
                 for (int c = 1; c < num_classes; ++c) {
@@ -155,10 +161,12 @@ void decode_yolo11_outputs(
                     }
                 }
 
+                if (best_score < logit_threshold) continue;
+
                 float conf = fast_sigmoid(best_score);
-                if (conf < conf_threshold) continue;
 
                 // DFL Decode 4 bounding box offsets
+                const float* reg_p = reg_base + grid_idx * 64;
                 float left   = decode_dfl_coord(reg_p + 0);
                 float top    = decode_dfl_coord(reg_p + 16);
                 float right  = decode_dfl_coord(reg_p + 32);
@@ -178,7 +186,7 @@ void decode_yolo11_outputs(
                 if (x2 > (float)target_w) x2 = (float)target_w;
                 if (y2 > (float)target_h) y2 = (float)target_h;
 
-                if (num_candidates < 10000) {
+                if (num_candidates < 2048) {
                     DetectionBox* box = &candidate_buffer[num_candidates++];
                     box->x1 = x1;
                     box->y1 = y1;
@@ -192,7 +200,6 @@ void decode_yolo11_outputs(
     }
 
     run_nms(candidate_buffer, num_candidates, iou_threshold, result);
-    free(candidate_buffer);
 }
 
 void apply_white_hot_colormap(const uint8_t* src_gray, uint8_t* dst_bgr, int width, int height) {
