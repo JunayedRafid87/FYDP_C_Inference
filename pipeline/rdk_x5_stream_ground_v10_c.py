@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 rdk_x5_stream_ground_v10_c.py
-Optimized Dual-Camera Streamer with Native C Post-Processing Acceleration,
-Single-Pass CLAHE, Zero-Copy Video Pipeline, and Low CPU Overhead.
+Sequential BPU Model Initializer + C Post-Processing Acceleration
+Low CPU Overhead + Full Web Ground Station Support.
 """
 
 import argparse
@@ -76,18 +76,15 @@ COLORMAPS = {
 clahe_filter = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
 
 def process_thermal_frame(frame, cmap_name, out_w=640, out_h=480):
-    """Single-pass CLAHE and color map generation to minimize CPU usage."""
     if frame is None:
         return np.zeros((out_h, out_w, 3), dtype=np.uint8), np.zeros((out_h, out_w, 3), dtype=np.uint8)
     
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
     enhanced = clahe_filter.apply(gray)
     
-    # 3-channel native resolution for inference
     infer_img = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
-    
-    # Upscaled display image
     resized = cv2.resize(enhanced, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+    
     cmap = COLORMAPS.get(cmap_name)
     if cmap is None:
         display_img = cv2.cvtColor(resized, cv2.COLOR_GRAY2BGR)
@@ -392,30 +389,16 @@ class PerfMonitor(threading.Thread):
 
 
 class InferThread(threading.Thread):
-    def __init__(self, name, src_slot, model_path, conf, classes_num=80, keep_class=0):
+    def __init__(self, name, src_slot, predictor):
         super().__init__(daemon=True)
         self.name, self.src = name, src_slot
-        self.model_path = model_path
-        self.conf = conf
-        self.classes_num = classes_num
-        self.keep_class = keep_class
+        self.pred = predictor
         self.out = Slot()
         self.ms = 0.0
         self.hz = 0.0
-        self.bpu_ms = 5.2
         self.running = True
 
     def run(self):
-        try:
-            print(f"[{self.name}] Loading BPU model: {self.model_path} (classes={self.classes_num}, keep_class={self.keep_class})")
-            pred = BPUPredictor(self.model_path, conf_thresh=self.conf,
-                                classes_num=self.classes_num,
-                                keep_class=self.keep_class)
-            print(f"[{self.name}] BPU Model loaded successfully: {self.model_path}")
-        except Exception as e:
-            print(f"[{self.name}] ERROR loading BPU model '{self.model_path}': {e}")
-            return
-
         last, t0 = -1, time.time()
         while self.running:
             frame, seq = self.src.get()
@@ -425,7 +408,7 @@ class InferThread(threading.Thread):
             last = seq
             try:
                 t_start = time.time()
-                boxes = pred.predict(frame)
+                boxes = self.pred.predict(frame)
                 self.ms = (time.time() - t_start) * 1000.0
                 now = time.time()
                 self.hz = 0.8 * self.hz + 0.2 / max(now - t0, 1e-5)
@@ -440,7 +423,7 @@ class InferThread(threading.Thread):
 
 class CameraWorker(threading.Thread):
     def __init__(self, name, cam_target, is_thermal=False, colormap="none",
-                 quality=70, out_size=None, hud=False, draw=False, infer_on="display",
+                 quality=70, out_size=None, infer_on="display",
                  width=None, height=None, fps=None):
         super().__init__(daemon=True)
         self.name = name
@@ -449,8 +432,6 @@ class CameraWorker(threading.Thread):
         self.colormap = colormap
         self.quality = quality
         self.out_size = out_size
-        self.hud = hud
-        self.draw = draw
         self.infer_on = infer_on
         self.width, self.height, self.req_fps = width, height, fps
         self.infer_in = Slot()
@@ -512,7 +493,6 @@ class CameraWorker(threading.Thread):
                 "boxes": [[b[0], b[1], b[2], b[3], round(b[4], 3)] for b in boxes]
             }
 
-            # Zero-copy JPEG encoding path
             ok, jpg = cv2.imencode('.jpg', display, enc)
             if ok:
                 self.jpeg.put(jpg.tobytes())
@@ -709,31 +689,44 @@ def main():
     print(f" Web Console: http://0.0.0.0:{args.port}/")
     print("=" * 65)
 
-    # Workers
-    rgb_worker = CameraWorker("RGB", args.rgb_cam, is_thermal=False, quality=args.quality, draw=False)
-    thm_worker = CameraWorker("Thermal", args.thermal_cam, is_thermal=True, colormap=args.colormap,
-                              quality=args.quality, draw=False, infer_on=args.infer_on)
+    # 1. Initialize BPU models sequentially in main thread to avoid concurrent BPU runtime locks
+    print(f"[1/4] Loading RGB BPU Model: {rgb_model}...")
+    rgb_pred = BPUPredictor(rgb_model, conf_thresh=args.rgb_conf,
+                            classes_num=args.rgb_classes, keep_class=0)
+    print("[+] RGB BPU Model ready.")
 
-    # Inferences
-    rgb_infer = InferThread("RGB-Infer", rgb_worker.infer_in, rgb_model,
-                            args.rgb_conf, classes_num=args.rgb_classes, keep_class=0)
-    thm_infer = InferThread("Thermal-Infer", thm_worker.infer_in, thm_model,
-                            args.thermal_conf, classes_num=args.thermal_classes, keep_class=None)
+    print(f"[2/4] Loading Thermal BPU Model: {thm_model}...")
+    thm_pred = BPUPredictor(thm_model, conf_thresh=args.thermal_conf,
+                            classes_num=args.thermal_classes, keep_class=None)
+    print("[+] Thermal BPU Model ready.")
+
+    # 2. Camera Workers
+    rgb_worker = CameraWorker("RGB", args.rgb_cam, is_thermal=False, quality=args.quality)
+    thm_worker = CameraWorker("Thermal", args.thermal_cam, is_thermal=True, colormap=args.colormap,
+                              quality=args.quality, infer_on=args.infer_on)
+
+    # 3. Inference Threads
+    rgb_infer = InferThread("RGB-Infer", rgb_worker.infer_in, rgb_pred)
+    thm_infer = InferThread("Thermal-Infer", thm_worker.infer_in, thm_pred)
 
     rgb_worker.infer = rgb_infer
     thm_worker.infer = thm_infer
 
-    # Start threads
+    # 4. Start Background Telemetry
     if not args.no_perf:
         PerfMonitor().start()
     if not args.no_gas:
         GasReader().start()
 
+    # 5. Start Workers and Inference Threads
+    print("[3/4] Starting camera and AI threads...")
     rgb_worker.start()
     thm_worker.start()
     rgb_infer.start()
     thm_infer.start()
 
+    # 6. Start Web Server
+    print(f"[4/4] Web Server listening on http://0.0.0.0:{args.port}/")
     server = ThreadedHTTPServer(("0.0.0.0", args.port), WebStreamHandler)
     server.rgb_worker = rgb_worker
     server.thermal_worker = thm_worker
