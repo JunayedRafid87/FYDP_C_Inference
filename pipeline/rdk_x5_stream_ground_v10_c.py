@@ -428,6 +428,9 @@ class InferThread(threading.Thread):
                 self.hz = 0.8 * self.hz + 0.2 / max(now - t0, 1e-5)
                 t0 = now
                 self.out.put(boxes)
+                if len(boxes) > 0:
+                    scores_str = ", ".join([f"{b[4]:.2f}" for b in boxes])
+                    print(f"[{self.name}] Detected {len(boxes)} target(s) | Conf: [{scores_str}] | Latency: {self.ms:.1f}ms")
             except Exception as e:
                 print(f"[{self.name}] Inference error: {e}")
                 time.sleep(0.05)
@@ -694,8 +697,8 @@ def main():
     parser.add_argument("--colormap", choices=list(COLORMAPS.keys()), default="none")
     parser.add_argument("--thermal-model", default="thermal_yolo11n_v3_bayese_640x640_nv12.bin")
     parser.add_argument("--rgb-model", default="yolo11m_detect_bayese_640x640_nv12.bin")
-    parser.add_argument("--thermal-conf", type=float, default=0.50)
-    parser.add_argument("--rgb-conf", type=float, default=0.35)
+    parser.add_argument("--thermal-conf", type=float, default=0.35, help="Thermal confidence threshold")
+    parser.add_argument("--rgb-conf", type=float, default=0.50, help="RGB confidence threshold")
     parser.add_argument("--thermal-classes", type=int, default=1)
     parser.add_argument("--rgb-classes", type=int, default=80)
     parser.add_argument("--hud", action="store_true", default=False)
