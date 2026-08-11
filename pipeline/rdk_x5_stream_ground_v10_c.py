@@ -516,6 +516,10 @@ class WebStreamHandler(BaseHTTPRequestHandler):
             self.serve_js(path)
             return
 
+        if path.lower().endswith((".png", ".jpg", ".jpeg", ".svg", ".ico", ".gif")):
+            self.serve_static(path)
+            return
+
         if path in ("/rgb_feed", "/rgb", "/stream_rgb", "/video_feed/rgb"):
             self.serve_mjpeg(self.server.rgb_worker)
             return
@@ -595,6 +599,33 @@ class WebStreamHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/javascript")
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(content)
+
+    def serve_static(self, req_path):
+        import urllib.parse
+        fname = urllib.parse.unquote(os.path.basename(req_path))
+        search_dirs = [os.getcwd(), os.path.dirname(os.path.abspath(__file__)),
+                       os.path.join(os.path.dirname(os.path.abspath(__file__)), "../ground_station"),
+                       os.path.join(os.path.dirname(os.path.abspath(__file__)), "../ground_station/uploads"),
+                       "/home/sunrise/FYDP_Test", "/home/sunrise/FYDP_Test/ground_station",
+                       "/home/sunrise/FYDP_Test/uploads"]
+        content = None
+        for d in search_dirs:
+            candidate = os.path.join(d, fname)
+            if os.path.exists(candidate):
+                content = open(candidate, "rb").read()
+                break
+
+        if content is None:
+            self.send_error(404, f"File {fname} not found")
+            return
+
+        ctype = "image/png" if fname.endswith(".png") else "image/jpeg" if fname.endswith((".jpg", ".jpeg")) else "image/svg+xml" if fname.endswith(".svg") else "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "public, max-age=86400")
         self.end_headers()
         self.wfile.write(content)
 
