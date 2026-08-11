@@ -431,11 +431,11 @@ class InferThread(threading.Thread):
 
     def run(self):
         try:
-            print(f"[{self.name}] Initializing BPU predictor with model: {self.model_path} (classes={self.classes_num}, keep_class={self.keep_class})")
+            print(f"[{self.name}] Loading BPU model: {self.model_path} (classes={self.classes_num}, keep_class={self.keep_class})")
             pred = BPUPredictor(self.model_path, conf_thresh=self.conf,
                                 classes_num=self.classes_num,
                                 keep_class=self.keep_class)
-            print(f"[{self.name}] BPU Predictor loaded successfully: {self.model_path}")
+            print(f"[{self.name}] BPU Model loaded successfully: {self.model_path}")
         except Exception as e:
             print(f"[{self.name}] ERROR loading BPU model '{self.model_path}': {e}")
             traceback.print_exc()
@@ -709,7 +709,13 @@ class WebStreamHandler(BaseHTTPRequestHandler):
 def find_model_path(requested, candidates):
     if requested and os.path.exists(os.path.expanduser(requested)):
         return os.path.expanduser(requested)
-    search_list = [requested] + candidates + [
+    search_list = [
+        requested,
+        "/home/sunrise/thermal_yolo11n_v3_best_bayese_640x640_nv12.bin",
+        "/home/sunrise/rdk_model_zoo/samples/vision/ultralytics_yolo/model/yolo11n_detect_bayese_640x640_nv12.bin",
+        "/home/sunrise/FYDP_Test/thermal_yolo11n_v3_bayese_640x640_nv12.bin",
+        "/home/sunrise/FYDP_Test/yolo11m_detect_bayese_640x640_nv12.bin",
+    ] + candidates + [
         f"/home/sunrise/FYDP_Test/{c}" for c in candidates
     ] + [
         f"{os.getcwd()}/{c}" for c in candidates
@@ -727,9 +733,9 @@ def main():
     parser.add_argument("--thermal-cam", default="0")
     parser.add_argument("--rgb-cam", default="10")
     parser.add_argument("--colormap", choices=list(COLORMAPS.keys()), default="none")
-    parser.add_argument("--thermal-model", default="thermal_yolo11n_v3_bayese_640x640_nv12.bin")
-    parser.add_argument("--rgb-model", default="yolo11m_detect_bayese_640x640_nv12.bin")
-    parser.add_argument("--thermal-conf", type=float, default=0.20, help="Thermal confidence threshold")
+    parser.add_argument("--thermal-model", default="/home/sunrise/thermal_yolo11n_v3_best_bayese_640x640_nv12.bin")
+    parser.add_argument("--rgb-model", default="/home/sunrise/rdk_model_zoo/samples/vision/ultralytics_yolo/model/yolo11n_detect_bayese_640x640_nv12.bin")
+    parser.add_argument("--thermal-conf", type=float, default=0.30, help="Thermal confidence threshold")
     parser.add_argument("--rgb-conf", type=float, default=0.50, help="RGB confidence threshold")
     parser.add_argument("--thermal-classes", type=int, default=1)
     parser.add_argument("--rgb-classes", type=int, default=80)
@@ -745,13 +751,13 @@ def main():
 
     # Find model files
     thm_model = find_model_path(args.thermal_model, [
-        "thermal_yolo11n_v3_bayese_640x640_nv12.bin",
         "thermal_yolo11n_v3_best_bayese_640x640_nv12.bin",
+        "thermal_yolo11n_v3_bayese_640x640_nv12.bin",
         "thermal_yolo11n_v3.bin"
     ])
     rgb_model = find_model_path(args.rgb_model, [
-        "yolo11m_detect_bayese_640x640_nv12.bin",
-        "yolo11n_detect_bayese_640x640_nv12.bin"
+        "yolo11n_detect_bayese_640x640_nv12.bin",
+        "yolo11m_detect_bayese_640x640_nv12.bin"
     ])
 
     print("=" * 65)
